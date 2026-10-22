@@ -1,6 +1,5 @@
 """Alphatel Partner Support System (APSS) — main entry point."""
 import streamlit as st
-import streamlit.components.v1 as components
 from sqlalchemy.exc import OperationalError
 
 from core import auth
@@ -25,39 +24,31 @@ except RuntimeError as e:
 
 st.logo("assets/logo.png", size="large")
 
-# Force logo resize via JS (Streamlit caps st.logo height internally)
-components.html("""
-<script>
-function resizeLogo() {
-    var doc = window.parent.document;
-    var selectors = [
-        '[data-testid="stSidebarHeader"] img',
-        '[data-testid="stLogo"] img',
-        '[data-testid="stLogoLink"] img',
-        'section[data-testid="stSidebar"] header img',
-    ];
-    var found = false;
-    selectors.forEach(function(sel) {
-        doc.querySelectorAll(sel).forEach(function(img) {
-            img.style.setProperty('height', '80px', 'important');
-            img.style.setProperty('max-height', 'none', 'important');
-            img.style.setProperty('width', 'auto', 'important');
-            img.style.setProperty('max-width', '200px', 'important');
-            found = true;
-        });
-    });
-    return found;
+# Override stLogoSpacer height (Streamlit caps logo at 32px/2rem)
+st.markdown("""
+<style>
+[data-testid="stLogoSpacer"] {
+    width: 180px !important;
+    height: 72px !important;
+    min-height: 72px !important;
+    overflow: visible !important;
 }
-// Try immediately and retry until found
-var tries = 0;
-var interval = setInterval(function() {
-    if (resizeLogo() || tries++ > 20) clearInterval(interval);
-}, 200);
-// Also watch for DOM changes (Streamlit re-renders)
-var observer = new MutationObserver(resizeLogo);
-observer.observe(window.parent.document.body, {childList: true, subtree: true});
-</script>
-""", height=0)
+[data-testid="stLogoSpacer"] img,
+[data-testid="stLogoSpacer"] a,
+[data-testid="stLogoSpacer"] a img {
+    height: 72px !important;
+    max-height: none !important;
+    width: auto !important;
+    max-width: 200px !important;
+    display: block !important;
+}
+[data-testid="stSidebarHeader"] {
+    height: 90px !important;
+    min-height: 90px !important;
+    padding: 8px 0 !important;
+}
+</style>
+""", unsafe_allow_html=True)
 
 auth.gate()
 
