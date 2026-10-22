@@ -27,7 +27,7 @@ def show():
                 COUNT(*) AS total,
                 SUM(CASE WHEN status NOT IN ('Resolved','Closed') THEN 1 ELSE 0 END) AS open_count,
                 SUM(CASE WHEN status IN ('Resolved','Closed') THEN 1 ELSE 0 END) AS closed_count,
-                SUM(CASE WHEN sla_deadline < NOW() AND status NOT IN ('Resolved','Closed') THEN 1 ELSE 0 END) AS sla_breach
+                SUM(CASE WHEN sla_deadline IS NOT NULL AND sla_deadline != '' AND sla_deadline::timestamptz < NOW() AND status NOT IN ('Resolved','Closed') THEN 1 ELSE 0 END) AS sla_breach
             FROM tickets
             WHERE DATE(created_at) BETWEEN :from_d AND :to_d
         """), {"from_d": str(date_from), "to_d": str(date_to)}).fetchone()
