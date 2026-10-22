@@ -28,13 +28,18 @@ st.logo("assets/logo.png", size="large")
 st.markdown("""
 <style>
 [data-testid="stSidebarHeader"] {
-    padding-top: 0.5rem;
-    padding-bottom: 0.5rem;
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
+    min-height: 100px;
 }
-[data-testid="stSidebarHeader"] img {
+[data-testid="stSidebarHeader"] img,
+[data-testid="stSidebarHeader"] > div img,
+section[data-testid="stSidebar"] header img {
     max-height: none !important;
-    height: 56px !important;
+    height: 80px !important;
     width: auto !important;
+    max-width: 200px !important;
+    object-fit: contain !important;
 }
 </style>
 """, unsafe_allow_html=True)
