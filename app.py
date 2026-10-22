@@ -22,7 +22,7 @@ except RuntimeError as e:
     st.error(str(e))
     st.stop()
 
-st.logo("assets/logo.png", size="large")
+st.logo("assets/logo.png")
 
 auth.gate()
 
