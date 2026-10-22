@@ -22,7 +22,7 @@ except RuntimeError as e:
     st.error(str(e))
     st.stop()
 
-st.logo("app/static/logo.png", size="large")
+st.logo("static/logo.png", size="large")
 
 # Override logo size — static URL works (data: URLs are blocked on Cloud)
 st.markdown("""
