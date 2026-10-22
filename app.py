@@ -22,6 +22,17 @@ except RuntimeError as e:
     st.error(str(e))
     st.stop()
 
+st.markdown("""
+<style>
+[data-testid="stSidebarHeader"] {
+    min-height: 0 !important;
+    height: auto !important;
+    padding: 8px 16px !important;
+}
+[data-testid="stLogoSpacer"] { display: none !important; }
+</style>
+""", unsafe_allow_html=True)
+
 with st.sidebar:
     st.image("static/logo.png", width=190)
 
