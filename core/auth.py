@@ -35,7 +35,7 @@ def is_admin() -> bool:
     user = current_user()
     with engine().connect() as con:
         role = con.execute(
-            text("SELECT role_name FROM agents WHERE email = :e AND active = TRUE"),
+            text("SELECT role_name FROM agents WHERE email = :e AND active = 1"),
             {"e": user["email"]}
         ).scalar()
     return role == "Admin"

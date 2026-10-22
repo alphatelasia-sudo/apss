@@ -14,14 +14,8 @@ import uuid
 from datetime import datetime, timezone
 
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
 from sqlalchemy import create_engine, text
 
-
-SCOPE = [
-    "https://spreadsheets.google.com/feeds",
-    "https://www.googleapis.com/auth/drive",
-]
 
 SHEETS = [
     "Hotels", "Agents", "Roles", "Tickets", "Comments",
@@ -37,10 +31,9 @@ def rows_to_dicts(sheet) -> list[dict]:
     return [dict(zip(headers, row)) for row in rows[1:] if any(row)]
 
 
-def migrate(spreadsheet_id: str, database_url: str, creds_file: str):
-    # Connect to Google Sheets
-    creds = ServiceAccountCredentials.from_json_keyfile_name(creds_file, SCOPE)
-    gc = gspread.authorize(creds)
+def migrate(spreadsheet_id: str, database_url: str, creds_file: str = None):
+    # Connect to Google Sheets via OAuth (browser login)
+    gc = gspread.oauth()
     ss = gc.open_by_key(spreadsheet_id)
 
     # Connect to Supabase

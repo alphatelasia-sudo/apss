@@ -27,7 +27,7 @@ def _gen_ticket_number() -> str:
 def _get_hotels():
     with engine().connect() as con:
         rows = con.execute(
-            text("SELECT hotel_id, hotel_name FROM hotels WHERE active = TRUE ORDER BY hotel_name")
+            text("SELECT hotel_id, hotel_name FROM hotels WHERE active = 1 ORDER BY hotel_name")
         ).fetchall()
     return {r.hotel_id: r.hotel_name for r in rows}
 
@@ -35,7 +35,7 @@ def _get_hotels():
 def _get_agents():
     with engine().connect() as con:
         rows = con.execute(
-            text("SELECT agent_id, name FROM agents WHERE active = TRUE ORDER BY name")
+            text("SELECT agent_id, name FROM agents WHERE active = 1 ORDER BY name")
         ).fetchall()
     return {r.agent_id: r.name for r in rows}
 
