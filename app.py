@@ -1,5 +1,6 @@
 """Alphatel Partner Support System (APSS) — main entry point."""
 import streamlit as st
+import streamlit.components.v1 as components
 from sqlalchemy.exc import OperationalError
 
 from core import auth
@@ -24,25 +25,39 @@ except RuntimeError as e:
 
 st.logo("assets/logo.png", size="large")
 
-# Override Streamlit's logo height cap
-st.markdown("""
-<style>
-[data-testid="stSidebarHeader"] {
-    padding-top: 0.75rem;
-    padding-bottom: 0.75rem;
-    min-height: 100px;
+# Force logo resize via JS (Streamlit caps st.logo height internally)
+components.html("""
+<script>
+function resizeLogo() {
+    var doc = window.parent.document;
+    var selectors = [
+        '[data-testid="stSidebarHeader"] img',
+        '[data-testid="stLogo"] img',
+        '[data-testid="stLogoLink"] img',
+        'section[data-testid="stSidebar"] header img',
+    ];
+    var found = false;
+    selectors.forEach(function(sel) {
+        doc.querySelectorAll(sel).forEach(function(img) {
+            img.style.setProperty('height', '80px', 'important');
+            img.style.setProperty('max-height', 'none', 'important');
+            img.style.setProperty('width', 'auto', 'important');
+            img.style.setProperty('max-width', '200px', 'important');
+            found = true;
+        });
+    });
+    return found;
 }
-[data-testid="stSidebarHeader"] img,
-[data-testid="stSidebarHeader"] > div img,
-section[data-testid="stSidebar"] header img {
-    max-height: none !important;
-    height: 80px !important;
-    width: auto !important;
-    max-width: 200px !important;
-    object-fit: contain !important;
-}
-</style>
-""", unsafe_allow_html=True)
+// Try immediately and retry until found
+var tries = 0;
+var interval = setInterval(function() {
+    if (resizeLogo() || tries++ > 20) clearInterval(interval);
+}, 200);
+// Also watch for DOM changes (Streamlit re-renders)
+var observer = new MutationObserver(resizeLogo);
+observer.observe(window.parent.document.body, {childList: true, subtree: true});
+</script>
+""", height=0)
 
 auth.gate()
 
