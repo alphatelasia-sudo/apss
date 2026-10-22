@@ -22,31 +22,8 @@ except RuntimeError as e:
     st.error(str(e))
     st.stop()
 
-st.logo("static/logo.png", size="large")
-
-# st.logo() caps img at 2rem via inline style — override by using the static URL
-# as a CSS background-image (/app/static/ is same-origin, not blocked by Cloud CSP).
-st.markdown("""
-<style>
-[data-testid="stSidebarHeader"] {
-    height: 80px !important;
-    min-height: 80px !important;
-}
-[data-testid="stLogoSpacer"] {
-    width: 200px !important;
-    height: 64px !important;
-    min-height: 64px !important;
-    background: url('/app/static/logo.png') no-repeat left center !important;
-    background-size: contain !important;
-}
-[data-testid="stLogoSpacer"] img,
-[data-testid="stLogoSpacer"] a img {
-    opacity: 0 !important;
-    width: 1px !important;
-    height: 1px !important;
-}
-</style>
-""", unsafe_allow_html=True)
+with st.sidebar:
+    st.image("static/logo.png", width=190)
 
 auth.gate()
 
