@@ -15,6 +15,11 @@ def gate():
         st.info("Please sign in with your Alphatel Google account to continue.")
         st.login()
         st.stop()
+    email = st.user.email or ""
+    if not email.endswith("@alphatel.asia"):
+        st.error(f"Access denied: {email} is not an Alphatel account.")
+        st.logout()
+        st.stop()
 
 
 def current_user() -> dict:
