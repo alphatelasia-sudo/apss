@@ -13,7 +13,7 @@ def gate():
     if not st.experimental_user.is_logged_in:
         st.title("Alphatel Partner Support System")
         st.info("Please sign in with your Alphatel Google account to continue.")
-        st.login("google")
+        st.login()
         st.stop()
 
 

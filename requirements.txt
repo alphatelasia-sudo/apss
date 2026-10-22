@@ -1,4 +1,4 @@
-streamlit[auth]==1.46.0
+streamlit[auth]>=1.46.0
 sqlalchemy==2.0.41
 psycopg2-binary
 pandas==2.2.3
