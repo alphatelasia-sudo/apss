@@ -38,9 +38,14 @@ def _ts(pg: bool) -> str:
     return "TIMESTAMPTZ DEFAULT NOW()" if pg else "TEXT DEFAULT (datetime('now'))"
 
 
+def _insert_ignore(pg: bool, table: str, cols: str, vals: str) -> str:
+    if pg:
+        return f"INSERT INTO {table} ({cols}) VALUES {vals} ON CONFLICT DO NOTHING"
+    return f"INSERT OR IGNORE INTO {table} ({cols}) VALUES {vals}"
+
+
 def _schema_ddl(pg: bool) -> list[str]:
     ts = _ts(pg)
-    upsert = "ON CONFLICT DO NOTHING" if pg else "OR IGNORE"
     return [
         f"""CREATE TABLE IF NOT EXISTS hotels (
             hotel_id TEXT PRIMARY KEY,
@@ -148,19 +153,19 @@ def _schema_ddl(pg: bool) -> list[str]:
             key TEXT PRIMARY KEY,
             value TEXT
         )""",
-        f"INSERT {upsert} INTO roles (role_id, role_name, description, color) VALUES "
-        "('rol_admin','Admin','System Administrator','#6366f1'),"
-        "('rol_support','Support Agent','Support Team Member','#10b981'),"
-        "('rol_manager','Manager','Team Manager','#f59e0b')",
-        f"INSERT {upsert} INTO sla_config (config_id, priority, sla_hours, warning_percent) VALUES "
-        "('sla_urgent','Urgent',24,75),('sla_high','High',48,75),"
-        "('sla_medium','Medium',72,75),('sla_low','Low',120,75)",
-        f"INSERT {upsert} INTO settings (key, value) VALUES "
-        "('system_name','Partner Support System'),"
-        "('company_name','Alphatel'),"
-        "('lark_webhook_default',''),"
-        "('lark_enabled','false'),"
-        "('timezone','Asia/Bangkok')",
+        _insert_ignore(pg, "roles", "role_id, role_name, description, color",
+                       "('rol_admin','Admin','System Administrator','#6366f1'),"
+                       "('rol_support','Support Agent','Support Team Member','#10b981'),"
+                       "('rol_manager','Manager','Team Manager','#f59e0b')"),
+        _insert_ignore(pg, "sla_config", "config_id, priority, sla_hours, warning_percent",
+                       "('sla_urgent','Urgent',24,75),('sla_high','High',48,75),"
+                       "('sla_medium','Medium',72,75),('sla_low','Low',120,75)"),
+        _insert_ignore(pg, "settings", "key, value",
+                       "('system_name','Partner Support System'),"
+                       "('company_name','Alphatel'),"
+                       "('lark_webhook_default',''),"
+                       "('lark_enabled','false'),"
+                       "('timezone','Asia/Bangkok')"),
     ]
 
 
