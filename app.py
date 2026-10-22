@@ -24,25 +24,26 @@ except RuntimeError as e:
 
 st.logo("static/logo.png", size="large")
 
-# Override logo size — static URL works (data: URLs are blocked on Cloud)
+# st.logo() caps img at 2rem via inline style — override by using the static URL
+# as a CSS background-image (/app/static/ is same-origin, not blocked by Cloud CSP).
 st.markdown("""
 <style>
+[data-testid="stSidebarHeader"] {
+    height: 80px !important;
+    min-height: 80px !important;
+}
 [data-testid="stLogoSpacer"] {
-    width: 180px !important;
-    height: 70px !important;
-    min-height: 70px !important;
-    overflow: visible !important;
+    width: 200px !important;
+    height: 64px !important;
+    min-height: 64px !important;
+    background: url('/app/static/logo.png') no-repeat left center !important;
+    background-size: contain !important;
 }
 [data-testid="stLogoSpacer"] img,
 [data-testid="stLogoSpacer"] a img {
-    height: 70px !important;
-    max-height: 70px !important;
-    width: auto !important;
-    max-width: 200px !important;
-}
-[data-testid="stSidebarHeader"] {
-    height: 88px !important;
-    min-height: 88px !important;
+    opacity: 0 !important;
+    width: 1px !important;
+    height: 1px !important;
 }
 </style>
 """, unsafe_allow_html=True)
