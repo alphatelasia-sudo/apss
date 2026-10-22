@@ -11,7 +11,7 @@ def gate():
     if not auth_cfg:
         return  # local dev: open access
     if not st.user.is_logged_in:
-        st.title("Alphatel Partner Support System")
+        st.image("assets/logo.png", width=300)
         st.info("Please sign in with your Alphatel Google account to continue.")
         st.login()
         st.stop()

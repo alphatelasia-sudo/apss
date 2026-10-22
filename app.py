@@ -6,8 +6,8 @@ from core import auth
 from core.db import engine
 
 st.set_page_config(
-    page_title="Alphatel Partner Support System",
-    page_icon="🎫",
+    page_title="APSS — Alphatel Partner Support",
+    page_icon="assets/logo.png",
     layout="wide",
 )
 
@@ -21,6 +21,8 @@ except OperationalError as e:
 except RuntimeError as e:
     st.error(str(e))
     st.stop()
+
+st.logo("assets/logo.png", size="large")
 
 auth.gate()
 
