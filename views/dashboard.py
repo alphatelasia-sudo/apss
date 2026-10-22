@@ -21,7 +21,7 @@ def show():
             text("SELECT COUNT(*) FROM tickets WHERE DATE(resolved_at) = CURRENT_DATE")
         ).scalar() or 0
         sla_breach = con.execute(
-            text("SELECT COUNT(*) FROM tickets WHERE sla_deadline < datetime('now') AND status NOT IN ('Resolved','Closed')")
+            text("SELECT COUNT(*) FROM tickets WHERE sla_deadline < NOW() AND status NOT IN ('Resolved','Closed')")
         ).scalar() or 0
 
     c1, c2, c3, c4 = st.columns(4)
