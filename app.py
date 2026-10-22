@@ -27,7 +27,7 @@ _LOGO_B64 = "iVBORw0KGgoAAAANSUhEUgAAAQUAAAB4CAYAAAD7Xec6AAAsd0lEQVR4nO2dB3hVVbb
 st.markdown(f"""
 <style>
 section[data-testid="stSidebar"] > div:first-child {{
-    padding-top: 85px !important;
+    padding-top: 120px !important;
     position: relative;
 }}
 section[data-testid="stSidebar"] > div:first-child::before {{
@@ -37,11 +37,11 @@ section[data-testid="stSidebar"] > div:first-child::before {{
     background-repeat: no-repeat;
     background-size: contain;
     background-position: left center;
-    height: 65px;
-    width: 200px;
+    height: 100px;
+    width: 220px;
     position: absolute;
-    top: 10px;
-    left: 16px;
+    top: 8px;
+    left: 14px;
     z-index: 9999;
 }}
 [data-testid="stLogoSpacer"] {{
