@@ -22,10 +22,9 @@ except RuntimeError as e:
     st.error(str(e))
     st.stop()
 
-auth.gate()
+st.logo("assets/logo.png", size="large")
 
-with st.sidebar:
-    st.image("assets/logo.png", use_container_width=True)
+auth.gate()
 
 MENU = {
     "Support": [
