@@ -8,7 +8,7 @@ from core.db import engine
 
 st.set_page_config(
     page_title="APSS — Alphatel Partner Support",
-    page_icon="assets/logo.png",
+    page_icon="assets/favicon.png",
     layout="wide",
 )
 
