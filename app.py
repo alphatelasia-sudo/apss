@@ -24,6 +24,21 @@ except RuntimeError as e:
 
 st.logo("assets/logo.png", size="large")
 
+# Override Streamlit's logo height cap
+st.markdown("""
+<style>
+[data-testid="stSidebarHeader"] {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+}
+[data-testid="stSidebarHeader"] img {
+    max-height: none !important;
+    height: 56px !important;
+    width: auto !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 auth.gate()
 
 MENU = {
