@@ -1,4 +1,6 @@
-"""Tickets: list, create, view, edit, close, comments."""
+"""Tickets: list, create, view, edit, close, comments, attachments."""
+import base64
+import threading
 import uuid
 from datetime import datetime, timezone
 
@@ -16,6 +18,15 @@ PRIORITIES = ["Low", "Medium", "High", "Urgent"]
 CATEGORIES = ["General", "Complaint", "Request", "Technical", "Billing", "Other"]
 PRIORITY_BADGE = {"Urgent": "🔴", "High": "🟠", "Medium": "🟡", "Low": "🟢"}
 STATUS_BADGE = {"New": "🆕", "Open": "📂", "In Progress": "🔄", "Resolved": "✅", "Closed": "🔒"}
+
+ALLOWED_MIME = {
+    "image/jpeg", "image/png", "image/gif", "image/webp",
+    "application/pdf",
+    "text/plain", "text/csv",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
+MAX_FILE_MB = 10
 
 
 def _gen_ticket_number() -> str:
@@ -40,14 +51,9 @@ def _get_agents():
     return {r.agent_id: r.name for r in rows}
 
 
-def _ticket_row(row) -> dict:
-    return dict(row._mapping)
-
-
 def show():
     st.header("🎫 Tickets")
     tab_list, tab_new = st.tabs(["Ticket List", "New Ticket"])
-
     with tab_list:
         _show_list()
     with tab_new:
@@ -88,8 +94,7 @@ def _show_list():
         d = dict(r._mapping)
         badge = f"{PRIORITY_BADGE.get(d['priority'], '•')} {STATUS_BADGE.get(d['status'], '•')}"
         label = f"{badge} #{d['ticket_number']} — {d['title']}"
-        sla = sla_status(d)
-        if sla == "breached":
+        if sla_status(d) == "breached":
             label += " ⚠️SLA"
         with st.expander(label, expanded=(str(d["ticket_id"]) == str(selected_id))):
             _show_ticket_detail(d)
@@ -115,6 +120,8 @@ def _show_ticket_detail(d: dict):
     if st.session_state.get(f"editing_{d['ticket_id']}"):
         _show_edit_form(d)
 
+    _show_attachments(d["ticket_id"])
+    _show_upload_attachment(d["ticket_id"])
     _show_comments(d["ticket_id"])
     _show_add_comment(d["ticket_id"])
 
@@ -179,18 +186,19 @@ def _update_ticket(d: dict, **fields):
             "now": now,
             "ticket_id": d["ticket_id"],
         })
-        # History entry
         con.execute(text("""
             INSERT INTO history (history_id, ticket_id, action, agent_id, agent_name, timestamp)
             VALUES (:hid, :tid, 'updated', :aid, :aname, :ts)
         """), {"hid": str(uuid.uuid4()), "tid": d["ticket_id"],
                "aid": user["email"], "aname": user["name"], "ts": now})
-    # refresh updated ticket for Lark
-    with engine().connect() as con:
-        updated = dict(con.execute(
-            text("SELECT * FROM tickets WHERE ticket_id = :id"), {"id": d["ticket_id"]}
-        ).fetchone()._mapping)
-    notify_ticket_updated(updated, f"Status → {fields['status']}, Priority → {fields['priority']}")
+    # Fire-and-forget Lark notify so it never blocks the UI
+    updated = {"ticket_number": d.get("ticket_number"), "title": fields["title"],
+               "priority": fields["priority"]}
+    threading.Thread(
+        target=notify_ticket_updated,
+        args=(updated, f"Status → {fields['status']}, Priority → {fields['priority']}"),
+        daemon=True,
+    ).start()
     st.success("Ticket updated.")
 
 
@@ -210,11 +218,87 @@ def _close_ticket(d: dict):
     st.success("Ticket closed.")
 
 
+# ── Attachments ────────────────────────────────────────────────────────────────
+
+def _save_attachments(ticket_id: str, files: list) -> int:
+    """Store uploaded files as base64 data-URLs in the attachments table. Returns count saved."""
+    if not files:
+        return 0
+    user = current_user()
+    now = datetime.now(timezone.utc)
+    saved = 0
+    with engine().begin() as con:
+        for f in files:
+            size_mb = len(f.getvalue()) / (1024 * 1024)
+            if size_mb > MAX_FILE_MB:
+                st.warning(f"⚠️ {f.name} exceeds {MAX_FILE_MB} MB limit — skipped.")
+                continue
+            b64 = base64.b64encode(f.getvalue()).decode()
+            data_url = f"data:{f.type or 'application/octet-stream'};base64,{b64}"
+            con.execute(text("""
+                INSERT INTO attachments
+                    (attachment_id, ticket_id, filename, mime_type,
+                     file_url, uploaded_by, uploaded_by_name, created_at)
+                VALUES (:aid, :tid, :fname, :mime, :url, :by, :byname, :ts)
+            """), {
+                "aid": str(uuid.uuid4()), "tid": ticket_id,
+                "fname": f.name, "mime": f.type or "application/octet-stream",
+                "url": data_url, "by": user["email"], "byname": user["name"], "ts": now,
+            })
+            saved += 1
+    return saved
+
+
+def _show_attachments(ticket_id: str):
+    with engine().connect() as con:
+        rows = con.execute(
+            text("SELECT * FROM attachments WHERE ticket_id = :tid ORDER BY created_at"),
+            {"tid": ticket_id},
+        ).fetchall()
+    if not rows:
+        return
+    st.subheader("📎 Attachments")
+    for r in rows:
+        d = dict(r._mapping)
+        try:
+            # Decode base64 data-URL for download
+            data_url = d["file_url"] or ""
+            if data_url.startswith("data:"):
+                raw = base64.b64decode(data_url.split(",", 1)[1])
+            else:
+                raw = data_url.encode()
+            st.download_button(
+                label=f"⬇️ {d['filename']}",
+                data=raw,
+                file_name=d["filename"],
+                mime=d["mime_type"] or "application/octet-stream",
+                key=f"dl_{d['attachment_id']}",
+            )
+        except Exception:
+            st.write(f"📎 {d['filename']} *(download unavailable)*")
+
+
+def _show_upload_attachment(ticket_id: str):
+    st.subheader("Upload Attachment")
+    files = st.file_uploader(
+        f"Attach files (max {MAX_FILE_MB} MB each)",
+        accept_multiple_files=True,
+        key=f"upload_{ticket_id}",
+    )
+    if files and st.button("Save Attachments", key=f"save_att_{ticket_id}"):
+        n = _save_attachments(ticket_id, files)
+        if n:
+            st.success(f"{n} file(s) attached.")
+            st.rerun()
+
+
+# ── Comments ───────────────────────────────────────────────────────────────────
+
 def _show_comments(ticket_id: str):
     with engine().connect() as con:
         rows = con.execute(
             text("SELECT * FROM comments WHERE ticket_id = :tid ORDER BY created_at"),
-            {"tid": ticket_id}
+            {"tid": ticket_id},
         ).fetchall()
     if rows:
         st.subheader("Comments")
@@ -247,12 +331,14 @@ def _show_add_comment(ticket_id: str):
                 st.rerun()
 
 
+# ── Create ─────────────────────────────────────────────────────────────────────
+
 def _show_create():
     st.subheader("Create New Ticket")
     hotels = _get_hotels()
     agents = _get_agents()
 
-    with st.form("create_ticket"):
+    with st.form("create_ticket", clear_on_submit=True):
         title = st.text_input("Title *")
         description = st.text_area("Description")
         c1, c2, c3 = st.columns(3)
@@ -266,6 +352,10 @@ def _show_create():
         customer_email = st.text_input("Customer Email")
         assigned_to = st.selectbox("Assign To", [""] + list(agents.keys()),
                                    format_func=lambda x: agents.get(x, "Unassigned") if x else "Unassigned")
+        uploaded_files = st.file_uploader(
+            f"Attachments (optional, max {MAX_FILE_MB} MB each)",
+            accept_multiple_files=True,
+        )
 
         if st.form_submit_button("Create Ticket"):
             if not title.strip():
@@ -276,6 +366,9 @@ def _show_create():
             ticket_id = str(uuid.uuid4())
             ticket_number = _gen_ticket_number()
             deadline = compute_deadline(now, priority)
+            hotel_name = hotels.get(hotel_id, "")
+            assigned_name = agents.get(assigned_to, "") if assigned_to else ""
+
             with engine().begin() as con:
                 con.execute(text("""
                     INSERT INTO tickets (
@@ -294,10 +387,9 @@ def _show_create():
                 """), {
                     "tid": ticket_id, "tnum": ticket_number, "title": title,
                     "desc": description, "cat": category, "priority": priority,
-                    "hotel_id": hotel_id, "hotel_name": hotels.get(hotel_id, ""),
+                    "hotel_id": hotel_id, "hotel_name": hotel_name,
                     "cname": customer_name, "cphone": customer_phone, "cemail": customer_email,
-                    "assigned_to": assigned_to or None,
-                    "assigned_name": agents.get(assigned_to, "") if assigned_to else "",
+                    "assigned_to": assigned_to or None, "assigned_name": assigned_name,
                     "created_by": user["email"], "created_by_name": user["name"],
                     "now": now, "sla_hours": 0, "deadline": deadline,
                 })
@@ -306,12 +398,23 @@ def _show_create():
                     VALUES (:hid, :tid, 'created', :aid, :aname, :ts)
                 """), {"hid": str(uuid.uuid4()), "tid": ticket_id,
                        "aid": user["email"], "aname": user["name"], "ts": now})
-            with engine().connect() as con2:
-                new_ticket = dict(con2.execute(
-                    text("SELECT * FROM tickets WHERE ticket_id = :id"), {"id": ticket_id}
-                ).fetchone()._mapping)
-            notify_ticket_created(new_ticket)
-            st.success(f"Ticket #{ticket_number} created.")
+
+            # Save attachments immediately (no extra DB round-trip needed)
+            if uploaded_files:
+                _save_attachments(ticket_id, uploaded_files)
+
+            # Non-blocking Lark notification — never delays the UI
+            new_ticket_brief = {
+                "ticket_number": ticket_number, "title": title,
+                "priority": priority, "hotel_name": hotel_name,
+            }
+            threading.Thread(
+                target=notify_ticket_created, args=(new_ticket_brief,), daemon=True
+            ).start()
+
+            st.success(f"✅ Ticket #{ticket_number} created.")
             st.session_state["apss_selected_ticket"] = ticket_id
+            st.rerun()
+
 
 show()
