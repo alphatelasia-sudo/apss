@@ -10,7 +10,7 @@ from sqlalchemy import text
 
 from core.auth import current_user
 from core.db import engine
-from core.lark import notify_ticket_created, notify_ticket_updated
+from core.lark import notify_ticket_closed, notify_ticket_created, notify_ticket_updated
 from core.sla import compute_deadline, sla_status
 
 STATUSES = ["New", "Open", "In Progress", "Resolved", "Closed"]
@@ -215,6 +215,12 @@ def _close_ticket(d: dict):
             VALUES (:hid, :tid, 'closed', :aid, :aname, :ts)
         """), {"hid": str(uuid.uuid4()), "tid": d["ticket_id"],
                "aid": user["email"], "aname": user["name"], "ts": now})
+    threading.Thread(
+        target=notify_ticket_closed,
+        args=({"ticket_number": d.get("ticket_number"), "title": d.get("title"),
+               "priority": d.get("priority"), "hotel_name": d.get("hotel_name", "-")},),
+        daemon=True,
+    ).start()
     st.success("Ticket closed.")
 
 

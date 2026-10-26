@@ -69,6 +69,15 @@ def notify_ticket_updated(ticket: dict, changes: str):
     )
 
 
+def notify_ticket_closed(ticket: dict):
+    notify(
+        f"🔒 Ticket #{ticket.get('ticket_number')} Closed",
+        f"**{ticket.get('title')}**\nPriority: {ticket.get('priority')} | Hotel: {ticket.get('hotel_name', '-')}",
+        priority=ticket.get("priority"),
+        color="grey",
+    )
+
+
 def notify_sla_breach(ticket: dict):
     notify(
         f"🚨 SLA Breach — #{ticket.get('ticket_number')}",
