@@ -35,6 +35,7 @@ def _gen_ticket_number() -> str:
     return f"TK{(count + 1):05d}"
 
 
+@st.cache_data(ttl=300)
 def _get_hotels():
     with engine().connect() as con:
         rows = con.execute(
@@ -43,6 +44,7 @@ def _get_hotels():
     return {r.hotel_id: r.hotel_name for r in rows}
 
 
+@st.cache_data(ttl=300)
 def _get_agents():
     with engine().connect() as con:
         rows = con.execute(
@@ -81,8 +83,13 @@ def _show_list():
         params["q"] = f"%{f_search}%"
     query += " ORDER BY created_at DESC LIMIT 200"
 
-    with engine().connect() as con:
-        rows = con.execute(text(query), params).fetchall()
+    with st.spinner("Loading tickets…"):
+        try:
+            with engine().connect() as con:
+                rows = con.execute(text(query), params).fetchall()
+        except Exception as e:
+            st.error(f"Failed to load tickets: {e}")
+            return
 
     if not rows:
         st.info("No tickets match the filter.")
