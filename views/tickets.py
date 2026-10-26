@@ -96,18 +96,57 @@ def _show_list():
         return
 
     selected_id = st.session_state.get("apss_selected_ticket")
+    ticket_map = {str(dict(r._mapping)["ticket_id"]): dict(r._mapping) for r in rows}
 
+    # ── Compact list ── no DB queries per row (all data already fetched)
     for r in rows:
         d = dict(r._mapping)
+        tid = str(d["ticket_id"])
         badge = f"{PRIORITY_BADGE.get(d['priority'], '•')} {STATUS_BADGE.get(d['status'], '•')}"
         label = f"{badge} #{d['ticket_number']} — {d['title']}"
         if sla_status(d) == "breached":
             label += " ⚠️SLA"
-        with st.expander(label, expanded=(str(d["ticket_id"]) == str(selected_id))):
-            _show_ticket_detail(d)
+        with st.expander(label, expanded=(tid == str(selected_id))):
+            # Basic info: uses already-fetched data — zero extra DB queries
+            c1, c2 = st.columns(2)
+            c1.write(f"**Hotel:** {d.get('hotel_name') or '-'}")
+            c1.write(f"**Status:** {d['status']} | **Priority:** {d['priority']}")
+            c1.write(f"**Assigned:** {d.get('assigned_name') or 'Unassigned'}")
+            c2.write(f"**Category:** {d.get('category') or '-'}")
+            c2.write(f"**SLA:** {d.get('sla_deadline') or '-'}")
+            c2.write(f"**Created:** {d.get('created_at')}")
+            if d.get("description"):
+                st.write(f"**Description:** {d['description']}")
+            st.divider()
+            bt1, bt2, bt3 = st.columns(3)
+            if bt1.button("✏️ Edit", key=f"edit_{tid}"):
+                st.session_state[f"editing_{tid}"] = True
+                st.session_state["apss_selected_ticket"] = tid
+                st.rerun()
+            if bt2.button("🔒 Close", key=f"close_{tid}",
+                          disabled=d["status"] == "Closed"):
+                _close_ticket(d)
+                st.rerun()
+            if bt3.button("💬 Comments & Files", key=f"detail_{tid}"):
+                st.session_state["apss_selected_ticket"] = tid
+                st.rerun()
+
+    # ── Full detail panel (DB-heavy: comments + attachments) ──
+    # Loaded only for the one selected ticket — not N queries for every row
+    if selected_id and selected_id in ticket_map:
+        d = ticket_map[selected_id]
+        st.divider()
+        st.subheader(f"#{d['ticket_number']} — {d['title']}")
+        if st.session_state.get(f"editing_{selected_id}"):
+            _show_edit_form(d)
+        _show_attachments(selected_id)
+        _show_upload_attachment(selected_id)
+        _show_comments(selected_id)
+        _show_add_comment(selected_id)
 
 
 def _show_ticket_detail(d: dict):
+    """Used only from the edit flow (hotels/agents already resolved)."""
     st.write(f"**Hotel:** {d.get('hotel_name') or '-'} | **Category:** {d.get('category') or '-'}")
     st.write(f"**Status:** {d['status']} | **Priority:** {d['priority']}")
     st.write(f"**Assigned to:** {d.get('assigned_name') or 'Unassigned'}")
