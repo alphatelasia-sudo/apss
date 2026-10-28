@@ -376,7 +376,7 @@ def _show_add_comment(ticket_id: str):
                         VALUES (:cid, :tid, :aid, :aname, :comment, :internal, :ts)
                     """), {"cid": str(uuid.uuid4()), "tid": ticket_id,
                            "aid": user["email"], "aname": user["name"],
-                           "comment": comment, "internal": is_internal, "ts": now})
+                           "comment": comment, "internal": int(is_internal), "ts": now})
                 st.rerun()
 
 
