@@ -102,11 +102,12 @@ def _show_list():
     for r in rows:
         d = dict(r._mapping)
         tid = str(d["ticket_id"])
+        is_sel = tid == str(selected_id)
         badge = f"{PRIORITY_BADGE.get(d['priority'], '•')} {STATUS_BADGE.get(d['status'], '•')}"
         label = f"{badge} #{d['ticket_number']} — {d['title']}"
         if sla_status(d) == "breached":
             label += " ⚠️SLA"
-        with st.expander(label, expanded=(tid == str(selected_id))):
+        with st.expander(label, expanded=is_sel):
             # Basic info: uses already-fetched data — zero extra DB queries
             c1, c2 = st.columns(2)
             c1.write(f"**Hotel:** {d.get('hotel_name') or '-'}")
@@ -119,30 +120,26 @@ def _show_list():
                 st.write(f"**Description:** {d['description']}")
             st.divider()
             bt1, bt2, bt3 = st.columns(3)
+            # No st.rerun() here — button click already triggers a rerun;
+            # setting session_state is enough for the next render to pick up.
             if bt1.button("✏️ Edit", key=f"edit_{tid}"):
                 st.session_state[f"editing_{tid}"] = True
                 st.session_state["apss_selected_ticket"] = tid
-                st.rerun()
             if bt2.button("🔒 Close", key=f"close_{tid}",
                           disabled=d["status"] == "Closed"):
                 _close_ticket(d)
-                st.rerun()
+                st.rerun()  # needed: immediately shows updated status
             if bt3.button("💬 Comments & Files", key=f"detail_{tid}"):
                 st.session_state["apss_selected_ticket"] = tid
-                st.rerun()
 
-    # ── Full detail panel (DB-heavy: comments + attachments) ──
-    # Loaded only for the one selected ticket — not N queries for every row
-    if selected_id and selected_id in ticket_map:
-        d = ticket_map[selected_id]
-        st.divider()
-        st.subheader(f"#{d['ticket_number']} — {d['title']}")
-        if st.session_state.get(f"editing_{selected_id}"):
-            _show_edit_form(d)
-        _show_attachments(selected_id)
-        _show_upload_attachment(selected_id)
-        _show_comments(selected_id)
-        _show_add_comment(selected_id)
+            # Edit form and DB-heavy content only for the selected ticket
+            if is_sel:
+                if st.session_state.get(f"editing_{tid}"):
+                    _show_edit_form(d)
+                _show_attachments(tid)
+                _show_upload_attachment(tid)
+                _show_comments(tid)
+                _show_add_comment(tid)
 
 
 def _show_ticket_detail(d: dict):
