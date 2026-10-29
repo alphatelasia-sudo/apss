@@ -37,11 +37,12 @@ def _gen_ticket_number() -> str:
 
 @st.cache_data(ttl=300)
 def _get_hotels():
+    """Pull active hotels from apc_properties (shared Supabase DB with APC)."""
     with engine().connect() as con:
         rows = con.execute(
-            text("SELECT hotel_id, hotel_name FROM hotels WHERE active = 1 ORDER BY hotel_name")
+            text("SELECT code, name FROM apc_properties WHERE status != 'Inactive' ORDER BY name")
         ).fetchall()
-    return {r.hotel_id: r.hotel_name for r in rows}
+    return {r.code: r.name for r in rows}
 
 
 @st.cache_data(ttl=300)
