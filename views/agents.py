@@ -76,7 +76,7 @@ def _edit_agent(d: dict, roles: dict):
                     WHERE agent_id=:id
                 """), {"name": name, "email": email, "rid": role_id,
                        "rname": roles.get(role_id, ""), "luid": lark_user_id,
-                       "active": active, "id": d["agent_id"]})
+                       "active": int(active), "id": d["agent_id"]})
             st.session_state.pop(f"editing_agent_{d['agent_id']}", None)
             st.success("Agent updated.")
             st.rerun()

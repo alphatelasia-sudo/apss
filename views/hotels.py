@@ -61,7 +61,7 @@ def _show_edit(d: dict):
                     WHERE hotel_id=:id
                 """), {"name": hotel_name, "cp": contact_person, "phone": phone,
                        "email": email, "addr": address, "webhook": lark_webhook,
-                       "active": active, "id": d["hotel_id"]})
+                       "active": int(active), "id": d["hotel_id"]})
             st.session_state.pop(f"editing_hotel_{d['hotel_id']}", None)
             st.success("Hotel updated.")
             st.rerun()
