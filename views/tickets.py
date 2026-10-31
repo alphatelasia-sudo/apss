@@ -10,7 +10,7 @@ from sqlalchemy import text
 
 from core.auth import current_user
 from core.db import engine
-from core.lark import notify_ticket_closed, notify_ticket_created, notify_ticket_updated
+from core.lark import notify_ticket_closed, notify_ticket_created, notify_ticket_overdue, notify_ticket_updated
 from core.sla import compute_deadline, sla_status
 
 STATUSES = ["New", "Open", "In Progress", "Resolved", "Closed"]
@@ -107,6 +107,18 @@ def _show_list():
         label = f"{badge} #{d['ticket_number']} — {d['title']}"
         if sla_status(d) == "breached":
             label += " ⚠️SLA"
+        if d.get("due_date") and d["status"] not in ("Resolved", "Closed"):
+            due = d["due_date"]
+            if isinstance(due, str):
+                try:
+                    due = datetime.fromisoformat(due)
+                except Exception:
+                    due = None
+            if due:
+                if due.tzinfo is None:
+                    due = due.replace(tzinfo=timezone.utc)
+                if datetime.now(timezone.utc) > due:
+                    label += " ⏰OVERDUE"
         with st.expander(label, expanded=is_sel):
             # Basic info: uses already-fetched data — zero extra DB queries
             c1, c2 = st.columns(2)
@@ -115,6 +127,10 @@ def _show_list():
             c1.write(f"**Assigned:** {d.get('assigned_name') or 'Unassigned'}")
             c2.write(f"**Category:** {d.get('category') or '-'}")
             c2.write(f"**SLA:** {d.get('sla_deadline') or '-'}")
+            due_label = f"**Due Date:** {d.get('due_date') or '-'}"
+            if d.get("due_date") and d["status"] not in ("Resolved", "Closed"):
+                due_label += " ⏰"
+            c2.write(due_label)
             c2.write(f"**Created:** {d.get('created_at')}")
             if d.get("description"):
                 st.write(f"**Description:** {d['description']}")
@@ -191,10 +207,19 @@ def _show_edit_form(d: dict):
         cur_agent = agent_ids.index(d["assigned_to"]) if d.get("assigned_to") in agent_ids else 0
         assigned_to = st.selectbox("Assigned To", agent_ids, index=cur_agent,
                                    format_func=lambda x: agents.get(x, "Unassigned") if x else "Unassigned")
+        cur_due = None
+        if d.get("due_date"):
+            try:
+                v = d["due_date"]
+                cur_due = (datetime.fromisoformat(str(v)) if isinstance(v, str) else v).date()
+            except Exception:
+                cur_due = None
+        due_date = st.date_input("Due Date (optional)", value=cur_due)
         if st.form_submit_button("Save Changes"):
             _update_ticket(d, title=title, description=description, status=status,
                            priority=priority, category=category, hotel_id=hotel_id,
-                           assigned_to=assigned_to, agents=agents, hotels=hotels)
+                           assigned_to=assigned_to, agents=agents, hotels=hotels,
+                           due_date=due_date)
             st.session_state.pop(f"editing_{d['ticket_id']}", None)
             st.rerun()
 
@@ -209,6 +234,7 @@ def _update_ticket(d: dict, **fields):
                 priority = :priority, category = :category,
                 hotel_id = :hotel_id, hotel_name = :hotel_name,
                 assigned_to = :assigned_to, assigned_name = :assigned_name,
+                due_date = :due_date,
                 updated_at = :updated_at,
                 resolved_at = CASE WHEN :status IN ('Resolved','Closed') AND resolved_at IS NULL
                                    THEN :now ELSE resolved_at END,
@@ -225,6 +251,7 @@ def _update_ticket(d: dict, **fields):
             "hotel_name": fields["hotels"].get(fields["hotel_id"], ""),
             "assigned_to": fields["assigned_to"] or None,
             "assigned_name": fields["agents"].get(fields["assigned_to"], "") if fields["assigned_to"] else "",
+            "due_date": fields.get("due_date") or None,
             "updated_at": now,
             "now": now,
             "ticket_id": d["ticket_id"],
@@ -401,6 +428,7 @@ def _show_create():
         customer_email = st.text_input("Customer Email")
         assigned_to = st.selectbox("Assign To", [""] + list(agents.keys()),
                                    format_func=lambda x: agents.get(x, "Unassigned") if x else "Unassigned")
+        due_date = st.date_input("Due Date (optional)", value=None)
         uploaded_files = st.file_uploader(
             f"Attachments (optional, max {MAX_FILE_MB} MB each)",
             accept_multiple_files=True,
@@ -425,13 +453,13 @@ def _show_create():
                         status, hotel_id, hotel_name, customer_name, customer_phone,
                         customer_email, assigned_to, assigned_name,
                         created_by, created_by_name, created_at, updated_at,
-                        sla_hours, sla_deadline
+                        sla_hours, sla_deadline, due_date
                     ) VALUES (
                         :tid, :tnum, :title, :desc, :cat, :priority,
                         'New', :hotel_id, :hotel_name, :cname, :cphone,
                         :cemail, :assigned_to, :assigned_name,
                         :created_by, :created_by_name, :now, :now,
-                        :sla_hours, :deadline
+                        :sla_hours, :deadline, :due_date
                     )
                 """), {
                     "tid": ticket_id, "tnum": ticket_number, "title": title,
@@ -441,6 +469,7 @@ def _show_create():
                     "assigned_to": assigned_to or None, "assigned_name": assigned_name,
                     "created_by": user["email"], "created_by_name": user["name"],
                     "now": now, "sla_hours": 0, "deadline": deadline,
+                    "due_date": due_date or None,
                 })
                 con.execute(text("""
                     INSERT INTO history (history_id, ticket_id, action, agent_id, agent_name, timestamp)

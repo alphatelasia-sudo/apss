@@ -78,6 +78,16 @@ def notify_ticket_closed(ticket: dict):
     )
 
 
+def notify_ticket_overdue(ticket: dict):
+    notify(
+        f"⏰ Due Date Passed — #{ticket.get('ticket_number')}",
+        f"**{ticket.get('title')}**\n"
+        f"Due: {ticket.get('due_date')} | Priority: {ticket.get('priority')} | Hotel: {ticket.get('hotel_name', '-')}",
+        priority=ticket.get("priority"),
+        color="orange",
+    )
+
+
 def notify_sla_breach(ticket: dict):
     notify(
         f"🚨 SLA Breach — #{ticket.get('ticket_number')}",

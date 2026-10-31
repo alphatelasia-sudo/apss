@@ -166,6 +166,9 @@ def _schema_ddl(pg: bool) -> list[str]:
                        "('lark_webhook_default',''),"
                        "('lark_enabled','false'),"
                        "('timezone','Asia/Bangkok')"),
+        # Migrations: add columns to existing tables (IF NOT EXISTS is idempotent)
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS due_date TIMESTAMPTZ",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS due_notified_at TIMESTAMPTZ",
     ]
 
 
