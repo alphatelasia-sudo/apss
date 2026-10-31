@@ -78,4 +78,19 @@ def _show_lark_config():
             ok = notify("🧪 APSS Test", "Lark notifications are working correctly.", color="green")
             st.success("Test sent!") if ok else st.error("Failed. Check webhook URL.")
 
+    st.divider()
+    st.subheader("Overdue Notification Reset")
+    st.caption("Use this if overdue tickets were not notified (e.g. Lark was disabled at the time). "
+               "This clears the hourly throttle and resets all unresolved overdue tickets so they will be re-checked.")
+    if st.button("Reset Overdue Check", type="secondary"):
+        set_setting("last_overdue_check", "")
+        with engine().begin() as con:
+            con.execute(text("""
+                UPDATE tickets SET due_notified_at = NULL
+                WHERE due_date IS NOT NULL
+                  AND due_date < NOW()
+                  AND status NOT IN ('Resolved', 'Closed')
+            """))
+        st.success("Reset complete. Overdue tickets will be re-checked on next page load.")
+
 show()

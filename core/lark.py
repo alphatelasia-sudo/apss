@@ -78,8 +78,8 @@ def notify_ticket_closed(ticket: dict):
     )
 
 
-def notify_ticket_overdue(ticket: dict):
-    notify(
+def notify_ticket_overdue(ticket: dict) -> bool:
+    return notify(
         f"⏰ Due Date Passed — #{ticket.get('ticket_number')}",
         f"**{ticket.get('title')}**\n"
         f"Due: {ticket.get('due_date')} | Priority: {ticket.get('priority')} | Hotel: {ticket.get('hotel_name', '-')}",

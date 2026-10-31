@@ -42,6 +42,9 @@ with st.sidebar:
 def _check_overdue_tickets():
     """Send Lark alerts for tickets past due_date. Runs at most once per hour."""
     try:
+        # Skip entirely if Lark not enabled — don't consume the hourly slot
+        if get_setting("lark_enabled", "false").lower() != "true":
+            return
         last = get_setting("last_overdue_check", "")
         if last:
             last_dt = datetime.fromisoformat(last)
@@ -62,13 +65,15 @@ def _check_overdue_tickets():
             return
         from core.lark import notify_ticket_overdue
         now = datetime.now(timezone.utc)
-        with engine().begin() as con:
-            for r in rows:
-                d = dict(r._mapping)
-                notify_ticket_overdue(d)
-                con.execute(text(
-                    "UPDATE tickets SET due_notified_at = :now WHERE ticket_id = :id"
-                ), {"now": now, "id": d["ticket_id"]})
+        for r in rows:
+            d = dict(r._mapping)
+            sent = notify_ticket_overdue(d)
+            # Only mark as notified if Lark actually delivered the message
+            if sent:
+                with engine().begin() as con:
+                    con.execute(text(
+                        "UPDATE tickets SET due_notified_at = :now WHERE ticket_id = :id"
+                    ), {"now": now, "id": d["ticket_id"]})
     except Exception:
         pass  # never break the app over notification errors
 
