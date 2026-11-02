@@ -440,7 +440,8 @@ def _show_create(prefill: dict | None = None):
     )
 
     # Load APC plans for the currently selected hotel (reactive)
-    hotel_code = hotels.get(hotel_id, {}).get("code", "")
+    # hotel_code from hotels table, fallback to hotel_id (both follow H001/H002 pattern)
+    hotel_code = hotels.get(hotel_id, {}).get("code", "") or hotel_id or ""
     apc_plans = _get_apc_plans(hotel_code) if hotel_code else []
     # Fallback: APSS hotel room_types when APC has no config
     fallback_rooms = _get_hotel_room_types(hotel_id) if (hotel_id and not apc_plans) else []
