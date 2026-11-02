@@ -135,8 +135,8 @@ def _get_hotels():
                     text("SELECT hotel_id, hotel_name FROM hotels WHERE active = 1 ORDER BY hotel_name")
                 ).fetchall()
             return {r.hotel_id: {"name": r.hotel_name, "code": ""} for r in rows}
-        except Exception:
-            return {}
+        except Exception as e2:
+            return {"__error__": str(e2)}
 
 
 def show():
@@ -420,6 +420,9 @@ def _show_create(prefill: dict | None = None):
     """
     st.subheader("สร้าง Stop Sale ใหม่")
     hotels = _get_hotels()
+    if "__error__" in hotels:
+        st.error(f"ไม่สามารถโหลด Hotels ได้: {hotels['__error__']}")
+        return
     hotel_ids = list(hotels.keys())
 
     # Determine default hotel index from prefill
