@@ -23,7 +23,12 @@ _ROOM_PRESETS_FALLBACK = [
 
 @st.cache_data(ttl=600)
 def _get_apc_room_types(hotel_name: str) -> list[str]:
-    """Fetch distinct room types from APC bookings for a hotel (matched by name)."""
+    """Fetch distinct room types from APC bookings for a hotel (matched by name).
+    Strips leading APC code prefix e.g. 'H002_Guuden ...' → 'Guuden ...' before matching.
+    """
+    import re
+    clean = re.sub(r'^H\d+[_\s]+', '', hotel_name).strip()
+    search = clean if clean else hotel_name
     try:
         with engine().connect() as con:
             rows = con.execute(text("""
@@ -36,7 +41,7 @@ def _get_apc_room_types(hotel_name: str) -> list[str]:
                 )
                   AND ab.room_type IS NOT NULL AND ab.room_type != ''
                 ORDER BY ab.room_type
-            """), {"name": hotel_name}).fetchall()
+            """), {"name": search}).fetchall()
         result = [r[0] for r in rows if r[0]]
         return result if result else _ROOM_PRESETS_FALLBACK
     except Exception:
