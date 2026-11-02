@@ -213,70 +213,62 @@ def _show_calendar():
     C_SAT     = "#E8F0FF"  # light blue for Saturday
     C_SUN     = "#FFE8E8"  # light pink for Sunday
 
-    th = "padding:4px 5px;border:1px solid #ccc;white-space:nowrap;font-size:11px;"
-    td = "padding:3px 4px;border:1px solid #ddd;text-align:center;font-size:11px;"
-    td_rt = "padding:4px 6px;border:1px solid #ccc;white-space:nowrap;font-size:11px;font-weight:500;"
+    th_base = "padding:5px 6px;border:1px solid #ccc;white-space:nowrap;font-size:11px;font-weight:600;"
+    td_day  = "padding:3px 2px;border:1px solid #e0e0e0;text-align:center;font-size:11px;min-width:28px;"
+    td_board = "padding:4px 8px;border:1px solid #ddd;text-align:center;font-size:11px;font-weight:500;white-space:nowrap;"
+    td_rt_base = "padding:5px 10px;border:1px solid #ccc;white-space:nowrap;font-size:12px;font-weight:600;vertical-align:middle;min-width:160px;"
 
-    html = ["<div style='overflow-x:auto;'>"]
-    html.append(f"<table style='border-collapse:collapse;min-width:600px;'>")
+    # Pre-compute rowspan per room type (count boards that have data)
+    rt_rowspan = {}
+    for rt_lower, _ in sorted_room_types:
+        count = sum(1 for b in boards_to_show if any(k[0] == rt_lower and k[1] == b for k in status_matrix))
+        rt_rowspan[rt_lower] = max(count, 1)
 
-    # Header row 1: day numbers
+    html = ["<div style='overflow-x:auto;border:1px solid #ddd;border-radius:6px;'>"]
+    html.append("<table style='border-collapse:collapse;width:100%;'>")
+
+    # Header
     html.append("<thead>")
     html.append(
-        f"<tr>"
-        f"<th style='{th}background:{C_HDR};min-width:120px;'>Room Type</th>"
-        f"<th style='{th}background:{C_HDR};'>Board</th>"
+        f"<tr style='background:{C_HDR};'>"
+        f"<th style='{th_base}min-width:160px;text-align:left;background:{C_HDR};'>Room Type</th>"
+        f"<th style='{th_base}min-width:52px;background:{C_HDR};'>Board</th>"
     )
     for day in range(1, days_in_month + 1):
         dow_idx = date(sel_month.year, sel_month.month, day).weekday()
         bg = C_SAT if dow_idx == 5 else (C_SUN if dow_idx == 6 else C_HDR)
         html.append(
-            f"<th style='{th}background:{bg};min-width:26px;'>"
-            f"{day}<br><span style='font-weight:400;color:#666;font-size:10px;'>"
+            f"<th style='{th_base}background:{bg};min-width:28px;text-align:center;font-weight:600;'>"
+            f"{day}<br><span style='font-weight:400;color:#888;font-size:9px;'>"
             f"{dow[dow_idx][:2]}</span></th>"
         )
-    html.append("</tr>")
-    html.append("</thead><tbody>")
+    html.append("</tr></thead><tbody>")
 
-    # Data rows: one per (room_type, board)
-    for rt_lower, rt_original in sorted_room_types:
-        first_board = True
-        for b in boards_to_show:
-            # Check if this board has any data for this room type
-            has_data = any(
-                k[0] == rt_lower and k[1] == b for k in status_matrix
-            )
-            if not has_data:
-                continue
-            if first_board:
-                rt_cell = f"<td style='{td_rt}' rowspan='0'>{rt_original}</td>"
-                first_board = False
-            else:
-                rt_cell = ""
-            html.append(f"<tr>")
-            if rt_cell:
-                html.append(rt_cell)
-            html.append(
-                f"<td style='{td}background:{C_HDR};font-weight:500;'>{b}</td>"
-            )
+    # Data rows
+    stripe_colors = ["#ffffff", "#f9f9f9"]
+    for idx, (rt_lower, rt_original) in enumerate(sorted_room_types):
+        row_bg = stripe_colors[idx % 2]
+        active_boards = [b for b in boards_to_show if any(k[0] == rt_lower and k[1] == b for k in status_matrix)]
+        if not active_boards:
+            active_boards = boards_to_show[:1]
+        rowspan = rt_rowspan[rt_lower]
+        for b_idx, b in enumerate(active_boards):
+            html.append(f"<tr style='background:{row_bg};'>")
+            if b_idx == 0:
+                border_top = "border-top:2px solid #bbb;" if idx > 0 else ""
+                html.append(f"<td style='{td_rt_base}background:{row_bg};{border_top}' rowspan='{rowspan}'>{rt_original}</td>")
+            html.append(f"<td style='{td_board}background:{row_bg};color:#555;'>{b}</td>")
             for day in range(1, days_in_month + 1):
                 action = status_matrix.get((rt_lower, b, day))
+                dow_idx = date(sel_month.year, sel_month.month, day).weekday()
                 if action == "Closed":
-                    cell_bg = C_CLOSED
-                    cell_text = "C"
-                    title = "Closed"
+                    cell_bg, cell_text, fw = C_CLOSED, "C", "font-weight:700;"
                 elif action == "Re-Open":
-                    cell_bg = C_REOPEN
-                    cell_text = "O"
-                    title = "Re-Open"
+                    cell_bg, cell_text, fw = C_REOPEN, "O", "font-weight:700;"
                 else:
-                    cell_bg = C_EMPTY
-                    cell_text = ""
-                    title = ""
-                html.append(
-                    f"<td style='{td}background:{cell_bg};' title='{title}'>"
-                    f"{cell_text}</td>"
-                )
+                    cell_bg = C_SAT if dow_idx == 5 else (C_SUN if dow_idx == 6 else row_bg)
+                    cell_text, fw = "", ""
+                html.append(f"<td style='{td_day}background:{cell_bg};{fw}'>{cell_text}</td>")
             html.append("</tr>")
 
     html.append("</tbody></table></div>")
