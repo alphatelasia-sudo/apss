@@ -42,11 +42,198 @@ def _get_hotels():
 
 def show():
     st.header("🚫 Stop Sale")
-    tab_list, tab_new = st.tabs(["Stop Sale List", "New Stop Sale"])
+    tab_cal, tab_list, tab_new = st.tabs(["📅 Calendar", "📋 List", "➕ New Stop Sale"])
+    with tab_cal:
+        _show_calendar()
     with tab_list:
         _show_list()
     with tab_new:
         _show_create()
+
+
+# ── Calendar ──────────────────────────────────────────────────────────────────
+
+def _show_calendar():
+    import calendar as cal_mod
+    from datetime import timedelta
+
+    hotels = _get_hotels()
+    if not hotels:
+        st.info("ยังไม่มีโรงแรมในระบบ")
+        return
+
+    today = date.today()
+
+    c1, c2 = st.columns([2, 1])
+    sel_hotel_name = c1.selectbox(
+        "Hotel", list(hotels.values()), key="cal_hotel"
+    )
+    # Build month options: 3 months back → 12 months ahead
+    month_opts = []
+    for delta in range(-3, 13):
+        m = today.month + delta
+        y = today.year + (m - 1) // 12
+        m = ((m - 1) % 12) + 1
+        month_opts.append(date(y, m, 1))
+    default_idx = month_opts.index(date(today.year, today.month, 1))
+    sel_month = c2.selectbox(
+        "Month",
+        month_opts,
+        index=default_idx,
+        format_func=lambda d: d.strftime("%B %Y"),
+        key="cal_month",
+    )
+
+    hotel_id = next(
+        (hid for hid, hname in hotels.items() if hname == sel_hotel_name), None
+    )
+    if not hotel_id:
+        return
+
+    # Date range for selected month
+    _, days_in_month = cal_mod.monthrange(sel_month.year, sel_month.month)
+    month_start = sel_month
+    month_end = date(sel_month.year, sel_month.month, days_in_month)
+
+    with engine().connect() as con:
+        rows = con.execute(text("""
+            SELECT * FROM stop_sales
+            WHERE hotel_id = :hid
+              AND status = 'Active'
+              AND date_from <= :me
+              AND date_to   >= :ms
+            ORDER BY created_at ASC
+        """), {"hid": hotel_id, "me": str(month_end), "ms": str(month_start)}).fetchall()
+
+    # Build status matrix: (room_type_lower, board, day_int) → action
+    # Last-written record wins; "Closed" and "Re-Open" can alternate
+    status_matrix: dict[tuple, str] = {}
+    all_room_type_originals: dict[str, str] = {}  # lower → original case
+
+    for r in rows:
+        d = dict(r._mapping)
+        room_types = [rt.strip() for rt in d["room_types"].split(",") if rt.strip()]
+        boards = ["RO", "RB"] if d["board"] == "ALL" else [d["board"]]
+        ss_from = max(date.fromisoformat(str(d["date_from"])), month_start)
+        ss_to   = min(date.fromisoformat(str(d["date_to"])), month_end)
+        for rt in room_types:
+            rt_lower = rt.lower()
+            all_room_type_originals[rt_lower] = rt  # keep original casing
+            for b in boards:
+                cur = ss_from
+                while cur <= ss_to:
+                    status_matrix[(rt_lower, b, cur.day)] = d["action"]
+                    cur += timedelta(days=1)
+
+    if not all_room_type_originals:
+        st.info(
+            f"ไม่มีรายการ Stop Sale ที่ Active สำหรับ **{sel_hotel_name}** "
+            f"ในเดือน {sel_month.strftime('%B %Y')}"
+        )
+        st.caption("สร้าง Stop Sale ได้ที่แท็บ ➕ New Stop Sale")
+        return
+
+    sorted_room_types = sorted(all_room_type_originals.items())  # (lower, original)
+    boards_to_show = ["RO", "RB"]
+
+    # Day-of-week abbreviations
+    dow = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+
+    # ── Build HTML table ────────────────────────────────────────────────────
+    # Color scheme
+    C_CLOSED  = "#FFCCCC"  # light red
+    C_REOPEN  = "#CCFFCC"  # light green
+    C_EMPTY   = "#FAFAFA"
+    C_HDR     = "#F0F0F0"
+    C_SAT     = "#E8F0FF"  # light blue for Saturday
+    C_SUN     = "#FFE8E8"  # light pink for Sunday
+
+    th = "padding:4px 5px;border:1px solid #ccc;white-space:nowrap;font-size:11px;"
+    td = "padding:3px 4px;border:1px solid #ddd;text-align:center;font-size:11px;"
+    td_rt = "padding:4px 6px;border:1px solid #ccc;white-space:nowrap;font-size:11px;font-weight:500;"
+
+    html = ["<div style='overflow-x:auto;'>"]
+    html.append(f"<table style='border-collapse:collapse;min-width:600px;'>")
+
+    # Header row 1: day numbers
+    html.append("<thead>")
+    html.append(
+        f"<tr>"
+        f"<th style='{th}background:{C_HDR};min-width:120px;'>Room Type</th>"
+        f"<th style='{th}background:{C_HDR};'>Board</th>"
+    )
+    for day in range(1, days_in_month + 1):
+        dow_idx = date(sel_month.year, sel_month.month, day).weekday()
+        bg = C_SAT if dow_idx == 5 else (C_SUN if dow_idx == 6 else C_HDR)
+        html.append(
+            f"<th style='{th}background:{bg};min-width:26px;'>"
+            f"{day}<br><span style='font-weight:400;color:#666;font-size:10px;'>"
+            f"{dow[dow_idx][:2]}</span></th>"
+        )
+    html.append("</tr>")
+    html.append("</thead><tbody>")
+
+    # Data rows: one per (room_type, board)
+    for rt_lower, rt_original in sorted_room_types:
+        first_board = True
+        for b in boards_to_show:
+            # Check if this board has any data for this room type
+            has_data = any(
+                k[0] == rt_lower and k[1] == b for k in status_matrix
+            )
+            if not has_data:
+                continue
+            if first_board:
+                rt_cell = f"<td style='{td_rt}' rowspan='0'>{rt_original}</td>"
+                first_board = False
+            else:
+                rt_cell = ""
+            html.append(f"<tr>")
+            if rt_cell:
+                html.append(rt_cell)
+            html.append(
+                f"<td style='{td}background:{C_HDR};font-weight:500;'>{b}</td>"
+            )
+            for day in range(1, days_in_month + 1):
+                action = status_matrix.get((rt_lower, b, day))
+                if action == "Closed":
+                    cell_bg = C_CLOSED
+                    cell_text = "C"
+                    title = "Closed"
+                elif action == "Re-Open":
+                    cell_bg = C_REOPEN
+                    cell_text = "O"
+                    title = "Re-Open"
+                else:
+                    cell_bg = C_EMPTY
+                    cell_text = ""
+                    title = ""
+                html.append(
+                    f"<td style='{td}background:{cell_bg};' title='{title}'>"
+                    f"{cell_text}</td>"
+                )
+            html.append("</tr>")
+
+    html.append("</tbody></table></div>")
+
+    # Legend
+    html.append(
+        "<div style='margin-top:8px;font-size:11px;display:flex;gap:16px;'>"
+        f"<span><span style='background:{C_CLOSED};padding:2px 8px;border:1px solid #ccc;'>C</span> Closed</span>"
+        f"<span><span style='background:{C_REOPEN};padding:2px 8px;border:1px solid #ccc;'>O</span> Re-Open / Open</span>"
+        f"<span><span style='background:{C_EMPTY};padding:2px 8px;border:1px solid #ccc;'>&nbsp;&nbsp;</span> ไม่มีรายการ</span>"
+        "</div>"
+    )
+
+    st.markdown("".join(html), unsafe_allow_html=True)
+
+    # Summary count
+    closed_count = sum(1 for v in status_matrix.values() if v == "Closed")
+    reopen_count = sum(1 for v in status_matrix.values() if v == "Re-Open")
+    st.caption(
+        f"📊 เดือนนี้: Closed {closed_count} เซลล์ | Re-Open {reopen_count} เซลล์ "
+        f"| ห้อง {len(sorted_room_types)} ประเภท"
+    )
 
 
 # ── List ───────────────────────────────────────────────────────────────────────
