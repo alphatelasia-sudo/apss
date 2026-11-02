@@ -40,9 +40,12 @@ def _get_apc_room_types(hotel_name: str) -> list[str]:
         with engine().connect() as con:
             # Strategy 1: Rate Structure config (apc_rs_config.body JSON → room_types[].name)
             if apc_code:
-                body_str = con.execute(text(
-                    "SELECT body FROM apc_rs_config WHERE code = :code"
-                ), {"code": apc_code}).scalar()
+                try:
+                    body_str = con.execute(text(
+                        "SELECT body FROM apc_rs_config WHERE code = :code"
+                    ), {"code": apc_code}).scalar()
+                except Exception:
+                    body_str = None
                 if body_str:
                     cfg = _json.loads(body_str)
                     result = [rt["name"] for rt in cfg.get("room_types", []) if rt.get("name")]
@@ -444,20 +447,6 @@ def _show_create(prefill: dict | None = None):
     default_hotel_id = hotel_ids[default_hotel_idx] if hotel_ids else None
     default_hotel_name = hotels.get(default_hotel_id, "") if default_hotel_id else ""
     room_type_options = _get_apc_room_types(default_hotel_name) if default_hotel_name else _ROOM_PRESETS_FALLBACK
-    # DEBUG: show what was resolved (remove after confirming)
-    import re as _re, json as _json2
-    _m = _re.match(r'^(H\d+)[_\s]', default_hotel_name)
-    _dbg_code = _m.group(1) if _m else "ไม่พบ code"
-    try:
-        with engine().connect() as _con:
-            _rs_body = _con.execute(text("SELECT body FROM apc_rs_config WHERE code=:c"), {"c": _dbg_code}).scalar()
-            _rs_info = f"rs_config body len={len(_rs_body)}" if _rs_body else "rs_config=NULL"
-            if _rs_body:
-                _cfg = _json2.loads(_rs_body)
-                _rs_info += f" | room_types={[r['name'] for r in _cfg.get('room_types',[]) if r.get('name')]}"
-    except Exception as _e:
-        _rs_info = f"error: {_e}"
-    st.caption(f"🔍 DEBUG — code:`{_dbg_code}` | {_rs_info} | final:{room_type_options}")
 
     with st.form("create_stop_sale", clear_on_submit=True):
         hotel_id = st.selectbox(
