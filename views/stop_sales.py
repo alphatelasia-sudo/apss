@@ -23,60 +23,25 @@ _ROOM_PRESETS_FALLBACK = [
 
 @st.cache_data(ttl=600)
 def _get_apc_room_types(hotel_name: str) -> list[str]:
-    """Fetch distinct room types from APC for a hotel.
-    Tries three strategies in order:
-    1. APC code extracted from name prefix (H002_... → code=H002) via apc_net_rates
-    2. Same code via apc_bookings
-    3. Name LIKE match via apc_bookings JOIN apc_properties
-    Falls back to preset list if nothing found.
+    """Fetch room types from APC Rate Structure (apc_rs_config) for a hotel.
+    Returns [] when no Rate Structure data exists — caller shows custom input only.
     """
-    import re
+    import re, json as _json
     m = re.match(r'^(H\d+)[_\s]', hotel_name)
     apc_code = m.group(1) if m else None
-    clean_name = re.sub(r'^H\d+[_\s]+', '', hotel_name).strip() or hotel_name
-
-    import json as _json
+    if not apc_code:
+        return []
     try:
         with engine().connect() as con:
-            # Strategy 1: Rate Structure config (apc_rs_config.body JSON → room_types[].name)
-            if apc_code:
-                try:
-                    body_str = con.execute(text(
-                        "SELECT body FROM apc_rs_config WHERE code = :code"
-                    ), {"code": apc_code}).scalar()
-                except Exception:
-                    body_str = None
-                if body_str:
-                    cfg = _json.loads(body_str)
-                    result = [rt["name"] for rt in cfg.get("room_types", []) if rt.get("name")]
-                    if result:
-                        return result
-
-            # Strategy 2: net rates by code
-            if apc_code:
-                rows = con.execute(text("""
-                    SELECT DISTINCT room_type FROM apc_net_rates
-                    WHERE code = :code AND room_type IS NOT NULL AND room_type != ''
-                    ORDER BY room_type
-                """), {"code": apc_code}).fetchall()
-                result = [r[0] for r in rows if r[0]]
-                if result:
-                    return result
-
-            # Strategy 3: bookings by code
-            if apc_code:
-                rows = con.execute(text("""
-                    SELECT DISTINCT room_type FROM apc_bookings
-                    WHERE code = :code AND room_type IS NOT NULL AND room_type != ''
-                    ORDER BY room_type
-                """), {"code": apc_code}).fetchall()
-                result = [r[0] for r in rows if r[0]]
-                if result:
-                    return result
-
-            return _ROOM_PRESETS_FALLBACK
+            body_str = con.execute(text(
+                "SELECT body FROM apc_rs_config WHERE code = :code"
+            ), {"code": apc_code}).scalar()
+        if not body_str:
+            return []
+        cfg = _json.loads(body_str)
+        return [rt["name"] for rt in cfg.get("room_types", []) if rt.get("name")]
     except Exception:
-        return _ROOM_PRESETS_FALLBACK
+        return []
 
 
 def _gen_ticket_number() -> str:
@@ -456,11 +421,14 @@ def _show_create(prefill: dict | None = None):
             format_func=lambda x: hotels.get(x, x),
         )
 
-        st.write("**Room Types** — ข้อมูลจาก APC (เลือกได้หลายห้อง หรือพิมพ์เพิ่มเติม)")
-        selected_presets = st.multiselect("Room Types", room_type_options)
+        if room_type_options:
+            st.write("**Room Types** — ข้อมูลจาก APC Rate Structure")
+        else:
+            st.write("**Room Types** — ยังไม่มีข้อมูล Rate Structure ใน APC กรุณาพิมพ์ด้านล่าง")
+        selected_presets = st.multiselect("Room Types (เลือกได้หลายห้อง)", room_type_options)
         custom_rooms = st.text_input(
-            "Room Types เพิ่มเติม (คั่นด้วยลูกน้ำ เช่น Pool Villa, Grand Suite)",
-            placeholder="เว้นว่างถ้าใช้รายการด้านบนครบแล้ว",
+            "Room Types เพิ่มเติม (คั่นด้วยลูกน้ำ เช่น Superior Double or Twin, Deluxe Pool Access)",
+            placeholder="พิมพ์ room type ที่ต้องการ",
         )
 
         c1, c2 = st.columns(2)
