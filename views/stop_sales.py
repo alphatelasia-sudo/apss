@@ -9,23 +9,91 @@ from sqlalchemy import text
 from core.auth import current_user
 from core.db import engine
 from core.lark import notify_stop_sale
+from core.sla import compute_deadline
 
 BOARDS = ["ALL", "RO", "RB"]
 ACTIONS = ["Closed", "Re-Open"]
 
-# Common room type presets (user can also type free-form)
-_ROOM_PRESETS = [
-    "Standard Double Room",
-    "Standard Twin Room",
-    "Deluxe Jacuzzi",
-    "Deluxe Poolside",
-    "Suite Jacuzzi",
-    "Suite Poolside",
-    "Superior Room",
-    "Deluxe Room",
-    "Family Room",
-    "Villa",
+_ROOM_PRESETS_FALLBACK = [
+    "Standard Double Room", "Standard Twin Room", "Deluxe Jacuzzi",
+    "Deluxe Poolside", "Suite Jacuzzi", "Suite Poolside",
+    "Superior Room", "Deluxe Room", "Family Room", "Villa",
 ]
+
+
+@st.cache_data(ttl=600)
+def _get_apc_room_types(hotel_name: str) -> list[str]:
+    """Fetch distinct room types from APC bookings for a hotel (matched by name)."""
+    try:
+        with engine().connect() as con:
+            rows = con.execute(text("""
+                SELECT DISTINCT ab.room_type
+                FROM apc_bookings ab
+                JOIN apc_properties ap ON ab.code = ap.code
+                WHERE LOWER(ap.name) = LOWER(:name)
+                  AND ab.room_type IS NOT NULL AND ab.room_type != ''
+                ORDER BY ab.room_type
+            """), {"name": hotel_name}).fetchall()
+        result = [r[0] for r in rows if r[0]]
+        return result if result else _ROOM_PRESETS_FALLBACK
+    except Exception:
+        return _ROOM_PRESETS_FALLBACK
+
+
+def _gen_ticket_number() -> str:
+    with engine().connect() as con:
+        count = con.execute(text("SELECT COUNT(*) FROM tickets")).scalar() or 0
+    return f"TK{(count + 1):05d}"
+
+
+def _create_ticket_for_stop_sale(
+    ss_id: str, hotel_id: str, hotel_name: str,
+    room_types_str: str, board: str, date_from, date_to, action: str,
+    note: str, user: dict, now: datetime,
+) -> str:
+    """Insert a ticket for this stop sale and return its ticket_id."""
+    ticket_id = str(uuid.uuid4())
+    ticket_number = _gen_ticket_number()
+    title = f"Stop Sale: {hotel_name} {date_from} → {date_to} ({action})"
+    description = (
+        f"Stop Sale สร้างอัตโนมัติจากระบบ\n\n"
+        f"**Hotel:** {hotel_name}\n"
+        f"**Room Types:** {room_types_str}\n"
+        f"**Board:** {board}\n"
+        f"**วันที่:** {date_from} → {date_to}\n"
+        f"**Action:** {action}\n"
+    )
+    if note:
+        description += f"**หมายเหตุ:** {note}\n"
+    deadline = compute_deadline(now, "High")
+    with engine().begin() as con:
+        con.execute(text("""
+            INSERT INTO tickets (
+                ticket_id, ticket_number, title, description, category, priority,
+                status, hotel_id, hotel_name,
+                created_by, created_by_name, created_at, updated_at,
+                sla_hours, sla_deadline
+            ) VALUES (
+                :tid, :tnum, :title, :desc, 'Request', 'High',
+                'New', :hotel_id, :hotel_name,
+                :by, :by_name, :now, :now,
+                48, :deadline
+            )
+        """), {
+            "tid": ticket_id, "tnum": ticket_number, "title": title,
+            "desc": description, "hotel_id": hotel_id, "hotel_name": hotel_name,
+            "by": user["email"], "by_name": user["name"],
+            "now": now, "deadline": deadline,
+        })
+        con.execute(text("""
+            INSERT INTO history (history_id, ticket_id, action, agent_id, agent_name, timestamp)
+            VALUES (:hid, :tid, 'created', :aid, :aname, :ts)
+        """), {"hid": str(uuid.uuid4()), "tid": ticket_id,
+               "aid": user["email"], "aname": user["name"], "ts": now})
+        con.execute(text(
+            "UPDATE stop_sales SET ticket_id = :tid WHERE stop_sale_id = :ssid"
+        ), {"tid": ticket_id, "ssid": ss_id})
+    return ticket_id
 
 ACTION_BADGE = {"Closed": "🚫", "Re-Open": "✅"}
 STATUS_COLOR = {"Active": "🟢", "Cancelled": "⚫"}
@@ -336,6 +404,11 @@ def _show_create(prefill: dict | None = None):
     if prefill and prefill.get("hotel_id") in hotel_ids:
         default_hotel_idx = hotel_ids.index(prefill["hotel_id"])
 
+    # Pre-load room types for the default hotel (outside form so it can react to hotel change)
+    default_hotel_id = hotel_ids[default_hotel_idx] if hotel_ids else None
+    default_hotel_name = hotels.get(default_hotel_id, "") if default_hotel_id else ""
+    room_type_options = _get_apc_room_types(default_hotel_name) if default_hotel_name else _ROOM_PRESETS_FALLBACK
+
     with st.form("create_stop_sale", clear_on_submit=True):
         hotel_id = st.selectbox(
             "Hotel *",
@@ -344,8 +417,8 @@ def _show_create(prefill: dict | None = None):
             format_func=lambda x: hotels.get(x, x),
         )
 
-        st.write("**Room Types** — เลือกจากรายการด้านล่าง หรือพิมพ์เพิ่มเติมในช่อง Custom")
-        selected_presets = st.multiselect("Room Types (เลือกได้หลายห้อง)", _ROOM_PRESETS)
+        st.write("**Room Types** — ข้อมูลจาก APC (เลือกได้หลายห้อง หรือพิมพ์เพิ่มเติม)")
+        selected_presets = st.multiselect("Room Types", room_type_options)
         custom_rooms = st.text_input(
             "Room Types เพิ่มเติม (คั่นด้วยลูกน้ำ เช่น Pool Villa, Grand Suite)",
             placeholder="เว้นว่างถ้าใช้รายการด้านบนครบแล้ว",
@@ -360,11 +433,8 @@ def _show_create(prefill: dict | None = None):
         date_to = c4.date_input("วันที่สิ้นสุด *", value=date.today())
 
         note = st.text_area("หมายเหตุ (optional)")
-        ticket_id_link = st.text_input(
-            "Ticket ID (optional)",
-            value=prefill.get("ticket_id", "") if prefill else "",
-            placeholder="เชื่อมกับ ticket ถ้ามี",
-        )
+        auto_ticket = st.checkbox("สร้าง Ticket อัตโนมัติ", value=True,
+                                  help="สร้าง ticket ประเภท Request/High ให้อัตโนมัติพร้อมกับ Stop Sale")
 
         if st.form_submit_button("🚫 สร้าง Stop Sale"):
             # Validate room types
@@ -388,11 +458,11 @@ def _show_create(prefill: dict | None = None):
                 con.execute(text("""
                     INSERT INTO stop_sales (
                         stop_sale_id, hotel_id, hotel_name, room_types, board,
-                        date_from, date_to, action, status, ticket_id,
+                        date_from, date_to, action, status,
                         requested_by, requested_by_name, note, created_at
                     ) VALUES (
                         :id, :hotel_id, :hotel_name, :room_types, :board,
-                        :date_from, :date_to, :action, 'Active', :ticket_id,
+                        :date_from, :date_to, :action, 'Active',
                         :by, :by_name, :note, :now
                     )
                 """), {
@@ -404,12 +474,29 @@ def _show_create(prefill: dict | None = None):
                     "date_from": str(date_from),
                     "date_to": str(date_to),
                     "action": action,
-                    "ticket_id": ticket_id_link.strip() or None,
                     "by": user["email"],
                     "by_name": user["name"],
                     "note": note.strip() or None,
                     "now": now,
                 })
+
+            # Auto-create ticket if requested
+            new_ticket_id = None
+            new_ticket_num = None
+            if auto_ticket:
+                try:
+                    new_ticket_id = _create_ticket_for_stop_sale(
+                        ss_id, hotel_id, hotel_name, room_types_str,
+                        board, date_from, date_to, action,
+                        note.strip(), user, now,
+                    )
+                    with engine().connect() as con:
+                        new_ticket_num = con.execute(
+                            text("SELECT ticket_number FROM tickets WHERE ticket_id = :tid"),
+                            {"tid": new_ticket_id},
+                        ).scalar()
+                except Exception as e:
+                    st.warning(f"Stop Sale สร้างแล้ว แต่สร้าง ticket ไม่สำเร็จ: {e}")
 
             # Non-blocking Lark notification
             ss_brief = {
@@ -419,17 +506,20 @@ def _show_create(prefill: dict | None = None):
                 "date_from": str(date_from),
                 "date_to": str(date_to),
                 "action": action,
-                "ticket_ref": ticket_id_link.strip() or "-",
+                "ticket_ref": new_ticket_num or "-",
                 "requested_by_name": user["name"],
             }
             threading.Thread(
                 target=notify_stop_sale, args=(ss_brief,), daemon=True
             ).start()
 
-            st.success(
-                f"✅ Stop Sale สร้างเรียบร้อย — {hotel_name} | {room_types_str} "
-                f"| {date_from} → {date_to} | {action}"
-            )
+            msg = (f"✅ Stop Sale สร้างเรียบร้อย — {hotel_name} | {room_types_str} "
+                   f"| {date_from} → {date_to} | {action}")
+            if new_ticket_num:
+                msg += f"\n\n🎫 Ticket **#{new_ticket_num}** ถูกสร้างอัตโนมัติ"
+            st.success(msg)
+            if new_ticket_id:
+                st.session_state["apss_selected_ticket"] = new_ticket_id
             st.cache_data.clear()
             st.rerun()
 
