@@ -35,9 +35,21 @@ def _get_apc_room_types(hotel_name: str) -> list[str]:
     apc_code = m.group(1) if m else None
     clean_name = re.sub(r'^H\d+[_\s]+', '', hotel_name).strip() or hotel_name
 
+    import json as _json
     try:
         with engine().connect() as con:
-            # Strategy 1: net rates table (most reliable room type source)
+            # Strategy 1: Rate Structure config (apc_rs_config.body JSON → room_types[].name)
+            if apc_code:
+                body_str = con.execute(text(
+                    "SELECT body FROM apc_rs_config WHERE code = :code"
+                ), {"code": apc_code}).scalar()
+                if body_str:
+                    cfg = _json.loads(body_str)
+                    result = [rt["name"] for rt in cfg.get("room_types", []) if rt.get("name")]
+                    if result:
+                        return result
+
+            # Strategy 2: net rates by code
             if apc_code:
                 rows = con.execute(text("""
                     SELECT DISTINCT room_type FROM apc_net_rates
@@ -48,7 +60,7 @@ def _get_apc_room_types(hotel_name: str) -> list[str]:
                 if result:
                     return result
 
-            # Strategy 2: bookings by code
+            # Strategy 3: bookings by code
             if apc_code:
                 rows = con.execute(text("""
                     SELECT DISTINCT room_type FROM apc_bookings
@@ -59,20 +71,7 @@ def _get_apc_room_types(hotel_name: str) -> list[str]:
                 if result:
                     return result
 
-            # Strategy 3: bookings by name LIKE
-            rows = con.execute(text("""
-                SELECT DISTINCT ab.room_type
-                FROM apc_bookings ab
-                JOIN apc_properties ap ON ab.code = ap.code
-                WHERE (
-                    LOWER(ap.name) LIKE '%' || LOWER(:name) || '%'
-                    OR LOWER(:name) LIKE '%' || LOWER(ap.name) || '%'
-                )
-                  AND ab.room_type IS NOT NULL AND ab.room_type != ''
-                ORDER BY ab.room_type
-            """), {"name": clean_name}).fetchall()
-            result = [r[0] for r in rows if r[0]]
-            return result if result else _ROOM_PRESETS_FALLBACK
+            return _ROOM_PRESETS_FALLBACK
     except Exception:
         return _ROOM_PRESETS_FALLBACK
 
