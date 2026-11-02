@@ -30,7 +30,11 @@ def engine():
     pg = eng.dialect.name == "postgresql"
     with eng.begin() as con:
         for ddl in _schema_ddl(pg):
-            con.execute(text(ddl))
+            try:
+                con.execute(text(ddl))
+            except Exception:
+                # SQLite: ALTER TABLE ADD COLUMN fails if column already exists; safe to ignore
+                pass
     return eng
 
 
