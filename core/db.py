@@ -173,6 +173,8 @@ def _schema_ddl(pg: bool) -> list[str]:
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS due_date TIMESTAMPTZ",
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS due_notified_at TIMESTAMPTZ",
         "ALTER TABLE hotels ADD COLUMN IF NOT EXISTS room_types TEXT",
+        "ALTER TABLE hotels ADD COLUMN IF NOT EXISTS hotel_code TEXT",
+        "ALTER TABLE stop_sales ADD COLUMN IF NOT EXISTS hotel_code TEXT",
         f"""CREATE TABLE IF NOT EXISTS stop_sales (
             stop_sale_id      TEXT PRIMARY KEY,
             hotel_id          TEXT,

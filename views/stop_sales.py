@@ -100,9 +100,9 @@ STATUS_COLOR = {"Active": "🟢", "Cancelled": "⚫"}
 def _get_hotels():
     with engine().connect() as con:
         rows = con.execute(
-            text("SELECT hotel_id, hotel_name FROM hotels WHERE active = 1 ORDER BY hotel_name")
+            text("SELECT hotel_id, hotel_name, hotel_code FROM hotels WHERE active = 1 ORDER BY hotel_name")
         ).fetchall()
-    return {r.hotel_id: r.hotel_name for r in rows}
+    return {r.hotel_id: {"name": r.hotel_name, "code": r.hotel_code or ""} for r in rows}
 
 
 def show():
@@ -131,7 +131,7 @@ def _show_calendar():
 
     c1, c2 = st.columns([2, 1])
     sel_hotel_name = c1.selectbox(
-        "Hotel", list(hotels.values()), key="cal_hotel"
+        "Hotel", [v["name"] for v in hotels.values()], key="cal_hotel"
     )
     # Build month options: 3 months back → 12 months ahead
     month_opts = []
@@ -150,7 +150,7 @@ def _show_calendar():
     )
 
     hotel_id = next(
-        (hid for hid, hname in hotels.items() if hname == sel_hotel_name), None
+        (hid for hid, v in hotels.items() if v["name"] == sel_hotel_name), None
     )
     if not hotel_id:
         return
@@ -308,7 +308,7 @@ def _show_list():
 
     with st.form("ss_filter"):
         c1, c2, c3 = st.columns(3)
-        f_hotel = c1.selectbox("Hotel", ["All"] + list(hotels.values()))
+        f_hotel = c1.selectbox("Hotel", ["All"] + [v["name"] for v in hotels.values()])
         f_action = c2.selectbox("Action", ["All"] + ACTIONS)
         f_status = c3.selectbox("Status", ["Active", "All", "Cancelled"])
         c4, c5, _ = st.columns(3)
@@ -410,7 +410,7 @@ def _show_create(prefill: dict | None = None):
             "Hotel *",
             hotel_ids,
             index=default_hotel_idx,
-            format_func=lambda x: hotels.get(x, x),
+            format_func=lambda x: hotels.get(x, {}).get("name", x),
         )
 
         if room_type_options:
@@ -450,17 +450,19 @@ def _show_create(prefill: dict | None = None):
             user = current_user()
             now = datetime.now(timezone.utc)
             ss_id = str(uuid.uuid4())
-            hotel_name = hotels.get(hotel_id, "")
+            hotel_info = hotels.get(hotel_id, {})
+            hotel_name = hotel_info.get("name", "")
+            hotel_code = hotel_info.get("code", "") or None
             room_types_str = ", ".join(all_rooms)
 
             with engine().begin() as con:
                 con.execute(text("""
                     INSERT INTO stop_sales (
-                        stop_sale_id, hotel_id, hotel_name, room_types, board,
+                        stop_sale_id, hotel_id, hotel_name, hotel_code, room_types, board,
                         date_from, date_to, action, status,
                         requested_by, requested_by_name, note, created_at
                     ) VALUES (
-                        :id, :hotel_id, :hotel_name, :room_types, :board,
+                        :id, :hotel_id, :hotel_name, :hotel_code, :room_types, :board,
                         :date_from, :date_to, :action, 'Active',
                         :by, :by_name, :note, :now
                     )
@@ -468,6 +470,7 @@ def _show_create(prefill: dict | None = None):
                     "id": ss_id,
                     "hotel_id": hotel_id,
                     "hotel_name": hotel_name,
+                    "hotel_code": hotel_code,
                     "room_types": room_types_str,
                     "board": board,
                     "date_from": str(date_from),

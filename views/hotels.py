@@ -46,7 +46,10 @@ def _show_list():
 
 def _show_edit(d: dict):
     with st.form(f"edit_hotel_{d['hotel_id']}"):
-        hotel_name = st.text_input("Hotel Name", value=d.get("hotel_name", ""))
+        c1, c2 = st.columns([3, 1])
+        hotel_name = c1.text_input("Hotel Name", value=d.get("hotel_name", ""))
+        hotel_code = c2.text_input("APC Code", value=d.get("hotel_code", ""),
+                                   help="รหัสโรงแรมใน APC เช่น H002 ใช้ match กับ Rate Structure")
         contact_person = st.text_input("Contact Person", value=d.get("contact_person", ""))
         phone = st.text_input("Phone", value=d.get("phone", ""))
         email = st.text_input("Email", value=d.get("email", ""))
@@ -63,11 +66,12 @@ def _show_edit(d: dict):
             rt_str = ", ".join(r.strip() for r in room_types.splitlines() if r.strip())
             with engine().begin() as con:
                 con.execute(text("""
-                    UPDATE hotels SET hotel_name=:name, contact_person=:cp, phone=:phone,
-                        email=:email, address=:addr, lark_webhook=:webhook, active=:active,
-                        room_types=:rt
+                    UPDATE hotels SET hotel_name=:name, hotel_code=:code, contact_person=:cp,
+                        phone=:phone, email=:email, address=:addr, lark_webhook=:webhook,
+                        active=:active, room_types=:rt
                     WHERE hotel_id=:id
-                """), {"name": hotel_name, "cp": contact_person, "phone": phone,
+                """), {"name": hotel_name, "code": hotel_code.strip().upper() or None,
+                       "cp": contact_person, "phone": phone,
                        "email": email, "addr": address, "webhook": lark_webhook,
                        "active": int(active), "rt": rt_str or None, "id": d["hotel_id"]})
             st.session_state.pop(f"editing_hotel_{d['hotel_id']}", None)
@@ -106,10 +110,12 @@ def _show_contacts(hotel_id: str):
 def _show_create():
     st.subheader("Add New Hotel")
     with st.form("add_hotel"):
-        hotel_name = st.text_input("Hotel Name *")
-        c1, c2 = st.columns(2)
-        contact_person = c1.text_input("Contact Person")
-        phone = c2.text_input("Phone")
+        c1, c2 = st.columns([3, 1])
+        hotel_name = c1.text_input("Hotel Name *")
+        hotel_code = c2.text_input("APC Code", help="เช่น H002")
+        c3, c4 = st.columns(2)
+        contact_person = c3.text_input("Contact Person")
+        phone = c4.text_input("Phone")
         email = st.text_input("Email")
         address = st.text_area("Address")
         lark_webhook = st.text_input("Lark Webhook URL (optional)")
@@ -119,9 +125,11 @@ def _show_create():
                 return
             with engine().begin() as con:
                 con.execute(text("""
-                    INSERT INTO hotels (hotel_id, hotel_name, contact_person, phone, email, address, lark_webhook)
-                    VALUES (:hid, :name, :cp, :phone, :email, :addr, :webhook)
-                """), {"hid": str(uuid.uuid4()), "name": hotel_name, "cp": contact_person,
+                    INSERT INTO hotels (hotel_id, hotel_name, hotel_code, contact_person, phone, email, address, lark_webhook)
+                    VALUES (:hid, :name, :code, :cp, :phone, :email, :addr, :webhook)
+                """), {"hid": str(uuid.uuid4()), "name": hotel_name,
+                       "code": hotel_code.strip().upper() or None,
+                       "cp": contact_person,
                        "phone": phone, "email": email, "addr": address, "webhook": lark_webhook})
             st.success(f"Hotel '{hotel_name}' added.")
             st.rerun()
