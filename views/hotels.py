@@ -52,16 +52,24 @@ def _show_edit(d: dict):
         email = st.text_input("Email", value=d.get("email", ""))
         address = st.text_area("Address", value=d.get("address", ""))
         lark_webhook = st.text_input("Lark Webhook", value=d.get("lark_webhook", ""))
+        room_types = st.text_area(
+            "Room Types (คั่นด้วยบรรทัดใหม่)",
+            value="\n".join((d.get("room_types") or "").split(",")) if d.get("room_types") else "",
+            help="กรอก Room Type แต่ละประเภทในบรรทัดใหม่ ใช้ใน Stop Sale",
+            height=120,
+        )
         active = st.checkbox("Active", value=bool(d.get("active", True)))
         if st.form_submit_button("Save"):
+            rt_str = ", ".join(r.strip() for r in room_types.splitlines() if r.strip())
             with engine().begin() as con:
                 con.execute(text("""
                     UPDATE hotels SET hotel_name=:name, contact_person=:cp, phone=:phone,
-                        email=:email, address=:addr, lark_webhook=:webhook, active=:active
+                        email=:email, address=:addr, lark_webhook=:webhook, active=:active,
+                        room_types=:rt
                     WHERE hotel_id=:id
                 """), {"name": hotel_name, "cp": contact_person, "phone": phone,
                        "email": email, "addr": address, "webhook": lark_webhook,
-                       "active": int(active), "id": d["hotel_id"]})
+                       "active": int(active), "rt": rt_str or None, "id": d["hotel_id"]})
             st.session_state.pop(f"editing_hotel_{d['hotel_id']}", None)
             st.success("Hotel updated.")
             st.rerun()

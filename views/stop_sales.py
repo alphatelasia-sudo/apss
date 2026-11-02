@@ -21,31 +21,18 @@ _ROOM_PRESETS_FALLBACK = [
 ]
 
 
-@st.cache_data(ttl=600)
-def _get_apc_room_types(hotel_name: str) -> list[str]:
-    """Fetch room types from APC Rate Structure (apc_rs_config) for a hotel.
-    Returns [] when no Rate Structure data exists — caller shows custom input only.
-    """
-    import re, json as _json
-    m = re.match(r'^(H\d+)[_\s]', hotel_name)
-    apc_code = m.group(1) if m else None
-    if not apc_code:
-        return []
+@st.cache_data(ttl=300)
+def _get_hotel_room_types(hotel_id: str) -> list[str]:
+    """Fetch room types configured for a hotel in APSS (hotels.room_types)."""
     try:
         with engine().connect() as con:
-            # Ensure table exists (created by APC's ensure_schema, but may not exist yet)
-            con.execute(text(
-                "CREATE TABLE IF NOT EXISTS apc_rs_config "
-                "(code TEXT PRIMARY KEY, body TEXT, updated_by TEXT, updated_at TEXT)"
-            ))
-        with engine().connect() as con:
-            body_str = con.execute(text(
-                "SELECT body FROM apc_rs_config WHERE code = :code"
-            ), {"code": apc_code}).scalar()
-        if not body_str:
+            rt_str = con.execute(
+                text("SELECT room_types FROM hotels WHERE hotel_id = :hid"),
+                {"hid": hotel_id},
+            ).scalar()
+        if not rt_str:
             return []
-        cfg = _json.loads(body_str)
-        return [rt["name"] for rt in cfg.get("room_types", []) if rt.get("name")]
+        return [r.strip() for r in rt_str.split(",") if r.strip()]
     except Exception:
         return []
 
@@ -416,8 +403,7 @@ def _show_create(prefill: dict | None = None):
 
     # Pre-load room types for the default hotel (outside form so it can react to hotel change)
     default_hotel_id = hotel_ids[default_hotel_idx] if hotel_ids else None
-    default_hotel_name = hotels.get(default_hotel_id, "") if default_hotel_id else ""
-    room_type_options = _get_apc_room_types(default_hotel_name) if default_hotel_name else _ROOM_PRESETS_FALLBACK
+    room_type_options = _get_hotel_room_types(default_hotel_id) if default_hotel_id else []
 
     with st.form("create_stop_sale", clear_on_submit=True):
         hotel_id = st.selectbox(
@@ -428,9 +414,9 @@ def _show_create(prefill: dict | None = None):
         )
 
         if room_type_options:
-            st.write("**Room Types** — ข้อมูลจาก APC Rate Structure")
+            st.write("**Room Types** — เลือกได้หลายห้อง")
         else:
-            st.write("**Room Types** — ยังไม่มีข้อมูล Rate Structure ใน APC กรุณาพิมพ์ด้านล่าง")
+            st.info("ยังไม่มี Room Types สำหรับโรงแรมนี้ — ไปตั้งค่าได้ที่ Management → Hotels → Edit")
         selected_presets = st.multiselect("Room Types (เลือกได้หลายห้อง)", room_type_options)
         custom_rooms = st.text_input(
             "Room Types เพิ่มเติม (คั่นด้วยลูกน้ำ เช่น Superior Double or Twin, Deluxe Pool Access)",
