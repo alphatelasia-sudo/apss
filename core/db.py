@@ -28,13 +28,12 @@ def _database_url() -> str:
 def engine():
     eng = create_engine(_database_url(), pool_pre_ping=True)
     pg = eng.dialect.name == "postgresql"
-    with eng.begin() as con:
-        for ddl in _schema_ddl(pg):
-            try:
+    for ddl in _schema_ddl(pg):
+        try:
+            with eng.begin() as con:
                 con.execute(text(ddl))
-            except Exception:
-                # SQLite: ALTER TABLE ADD COLUMN fails if column already exists; safe to ignore
-                pass
+        except Exception:
+            pass
     return eng
 
 
