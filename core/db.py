@@ -169,6 +169,23 @@ def _schema_ddl(pg: bool) -> list[str]:
         # Migrations: add columns to existing tables (IF NOT EXISTS is idempotent)
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS due_date TIMESTAMPTZ",
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS due_notified_at TIMESTAMPTZ",
+        f"""CREATE TABLE IF NOT EXISTS stop_sales (
+            stop_sale_id      TEXT PRIMARY KEY,
+            hotel_id          TEXT,
+            hotel_name        TEXT,
+            room_types        TEXT NOT NULL,
+            board             TEXT DEFAULT 'ALL',
+            date_from         DATE NOT NULL,
+            date_to           DATE NOT NULL,
+            action            TEXT DEFAULT 'Closed',
+            status            TEXT DEFAULT 'Active',
+            ticket_id         TEXT,
+            requested_by      TEXT,
+            requested_by_name TEXT,
+            note              TEXT,
+            created_at        {ts},
+            cancelled_at      TIMESTAMPTZ
+        )""",
     ]
 
 

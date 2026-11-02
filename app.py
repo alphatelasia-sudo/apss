@@ -83,8 +83,9 @@ _check_overdue_tickets()
 
 MENU = {
     "Support": [
-        ("views/dashboard.py",  "Dashboard",  "📊", "dashboard"),
-        ("views/tickets.py",    "Tickets",    "🎫", "tickets"),
+        ("views/dashboard.py",    "Dashboard",  "📊", "dashboard"),
+        ("views/tickets.py",      "Tickets",    "🎫", "tickets"),
+        ("views/stop_sales.py",   "Stop Sale",  "🚫", "stop_sales"),
     ],
     "Management": [
         ("views/hotels.py",     "Hotels",     "🏨", "hotels"),

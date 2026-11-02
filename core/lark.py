@@ -88,6 +88,20 @@ def notify_ticket_overdue(ticket: dict) -> bool:
     )
 
 
+def notify_stop_sale(ss: dict) -> bool:
+    action = ss.get("action", "Closed")
+    color = "red" if action == "Closed" else "green"
+    icon = "🚫" if action == "Closed" else "✅"
+    return notify(
+        f"{icon} Stop Sale {action} — {ss.get('hotel_name', '-')}",
+        f"**ห้องพัก:** {ss.get('room_types', '-')}\n"
+        f"**Board:** {ss.get('board', '-')}\n"
+        f"**วันที่:** {ss.get('date_from')} → {ss.get('date_to')}\n"
+        f"**Ticket:** {ss.get('ticket_ref', '-')} | **By:** {ss.get('requested_by_name', '-')}",
+        color=color,
+    )
+
+
 def notify_sla_breach(ticket: dict):
     notify(
         f"🚨 SLA Breach — #{ticket.get('ticket_number')}",

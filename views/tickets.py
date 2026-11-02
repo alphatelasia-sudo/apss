@@ -135,7 +135,7 @@ def _show_list():
             if d.get("description"):
                 st.write(f"**Description:** {d['description']}")
             st.divider()
-            bt1, bt2, bt3 = st.columns(3)
+            bt1, bt2, bt3, bt4 = st.columns(4)
             # No st.rerun() here — button click already triggers a rerun;
             # setting session_state is enough for the next render to pick up.
             if bt1.button("✏️ Edit", key=f"edit_{tid}"):
@@ -147,11 +147,16 @@ def _show_list():
                 st.rerun()  # needed: immediately shows updated status
             if bt3.button("💬 Comments & Files", key=f"detail_{tid}"):
                 st.session_state["apss_selected_ticket"] = tid
+            if bt4.button("🚫 Stop Sale", key=f"ss_{tid}"):
+                st.session_state["apss_selected_ticket"] = tid
+                st.session_state[f"stopsale_{tid}"] = True
 
             # Edit form and DB-heavy content only for the selected ticket
             if is_sel:
                 if st.session_state.get(f"editing_{tid}"):
                     _show_edit_form(d)
+                if st.session_state.get(f"stopsale_{tid}"):
+                    _show_inline_stop_sale(d)
                 _show_attachments(tid)
                 _show_upload_attachment(tid)
                 _show_comments(tid)
@@ -493,6 +498,18 @@ def _show_create():
             st.success(f"✅ Ticket #{ticket_number} created.")
             st.session_state["apss_selected_ticket"] = ticket_id
             st.rerun()
+
+
+def _show_inline_stop_sale(d: dict):
+    """Inline Stop Sale quick-form inside a ticket expander."""
+    from views.stop_sales import _show_create as _ss_create
+    st.divider()
+    st.subheader("🚫 สร้าง Stop Sale จาก Ticket นี้")
+    _ss_create(prefill={
+        "hotel_id": d.get("hotel_id", ""),
+        "hotel_name": d.get("hotel_name", ""),
+        "ticket_id": d.get("ticket_id", ""),
+    })
 
 
 show()
