@@ -121,11 +121,22 @@ STATUS_COLOR = {"Active": "🟢", "Cancelled": "⚫"}
 
 @st.cache_data(ttl=300)
 def _get_hotels():
-    with engine().connect() as con:
-        rows = con.execute(
-            text("SELECT hotel_id, hotel_name, hotel_code FROM hotels WHERE active = 1 ORDER BY hotel_name")
-        ).fetchall()
-    return {r.hotel_id: {"name": r.hotel_name, "code": r.hotel_code or ""} for r in rows}
+    try:
+        with engine().connect() as con:
+            rows = con.execute(
+                text("SELECT hotel_id, hotel_name, hotel_code FROM hotels WHERE active = 1 ORDER BY hotel_name")
+            ).fetchall()
+        return {r.hotel_id: {"name": r.hotel_name, "code": r.hotel_code or ""} for r in rows}
+    except Exception:
+        # hotel_code column may not exist yet — fall back without it
+        try:
+            with engine().connect() as con:
+                rows = con.execute(
+                    text("SELECT hotel_id, hotel_name FROM hotels WHERE active = 1 ORDER BY hotel_name")
+                ).fetchall()
+            return {r.hotel_id: {"name": r.hotel_name, "code": ""} for r in rows}
+        except Exception:
+            return {}
 
 
 def show():
