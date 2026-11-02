@@ -446,6 +446,10 @@ def _show_create(prefill: dict | None = None):
     # Fallback: APSS hotel room_types when APC has no config
     fallback_rooms = _get_hotel_room_types(hotel_id) if (hotel_id and not apc_plans) else []
 
+    # DEBUG — remove after fix confirmed
+    with st.expander("🔍 Debug", expanded=False):
+        st.write(f"hotel_id={hotel_id!r} hotel_code={hotel_code!r} apc_plans={apc_plans} fallback_rooms={fallback_rooms}")
+
     with st.form("create_stop_sale", clear_on_submit=True):
         if apc_plans:
             # Show room type + board options from APC Rate Structure
