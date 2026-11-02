@@ -23,14 +23,43 @@ _ROOM_PRESETS_FALLBACK = [
 
 @st.cache_data(ttl=600)
 def _get_apc_room_types(hotel_name: str) -> list[str]:
-    """Fetch distinct room types from APC bookings for a hotel (matched by name).
-    Strips leading APC code prefix e.g. 'H002_Guuden ...' → 'Guuden ...' before matching.
+    """Fetch distinct room types from APC for a hotel.
+    Tries three strategies in order:
+    1. APC code extracted from name prefix (H002_... → code=H002) via apc_net_rates
+    2. Same code via apc_bookings
+    3. Name LIKE match via apc_bookings JOIN apc_properties
+    Falls back to preset list if nothing found.
     """
     import re
-    clean = re.sub(r'^H\d+[_\s]+', '', hotel_name).strip()
-    search = clean if clean else hotel_name
+    m = re.match(r'^(H\d+)[_\s]', hotel_name)
+    apc_code = m.group(1) if m else None
+    clean_name = re.sub(r'^H\d+[_\s]+', '', hotel_name).strip() or hotel_name
+
     try:
         with engine().connect() as con:
+            # Strategy 1: net rates table (most reliable room type source)
+            if apc_code:
+                rows = con.execute(text("""
+                    SELECT DISTINCT room_type FROM apc_net_rates
+                    WHERE code = :code AND room_type IS NOT NULL AND room_type != ''
+                    ORDER BY room_type
+                """), {"code": apc_code}).fetchall()
+                result = [r[0] for r in rows if r[0]]
+                if result:
+                    return result
+
+            # Strategy 2: bookings by code
+            if apc_code:
+                rows = con.execute(text("""
+                    SELECT DISTINCT room_type FROM apc_bookings
+                    WHERE code = :code AND room_type IS NOT NULL AND room_type != ''
+                    ORDER BY room_type
+                """), {"code": apc_code}).fetchall()
+                result = [r[0] for r in rows if r[0]]
+                if result:
+                    return result
+
+            # Strategy 3: bookings by name LIKE
             rows = con.execute(text("""
                 SELECT DISTINCT ab.room_type
                 FROM apc_bookings ab
@@ -41,9 +70,9 @@ def _get_apc_room_types(hotel_name: str) -> list[str]:
                 )
                   AND ab.room_type IS NOT NULL AND ab.room_type != ''
                 ORDER BY ab.room_type
-            """), {"name": search}).fetchall()
-        result = [r[0] for r in rows if r[0]]
-        return result if result else _ROOM_PRESETS_FALLBACK
+            """), {"name": clean_name}).fetchall()
+            result = [r[0] for r in rows if r[0]]
+            return result if result else _ROOM_PRESETS_FALLBACK
     except Exception:
         return _ROOM_PRESETS_FALLBACK
 
