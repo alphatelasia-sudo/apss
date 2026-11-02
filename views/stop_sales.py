@@ -30,7 +30,10 @@ def _get_apc_room_types(hotel_name: str) -> list[str]:
                 SELECT DISTINCT ab.room_type
                 FROM apc_bookings ab
                 JOIN apc_properties ap ON ab.code = ap.code
-                WHERE LOWER(ap.name) = LOWER(:name)
+                WHERE (
+                    LOWER(ap.name) LIKE '%' || LOWER(:name) || '%'
+                    OR LOWER(:name) LIKE '%' || LOWER(ap.name) || '%'
+                )
                   AND ab.room_type IS NOT NULL AND ab.room_type != ''
                 ORDER BY ab.room_type
             """), {"name": hotel_name}).fetchall()
