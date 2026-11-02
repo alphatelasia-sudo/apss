@@ -33,6 +33,12 @@ def _get_apc_room_types(hotel_name: str) -> list[str]:
         return []
     try:
         with engine().connect() as con:
+            # Ensure table exists (created by APC's ensure_schema, but may not exist yet)
+            con.execute(text(
+                "CREATE TABLE IF NOT EXISTS apc_rs_config "
+                "(code TEXT PRIMARY KEY, body TEXT, updated_by TEXT, updated_at TEXT)"
+            ))
+        with engine().connect() as con:
             body_str = con.execute(text(
                 "SELECT body FROM apc_rs_config WHERE code = :code"
             ), {"code": apc_code}).scalar()
