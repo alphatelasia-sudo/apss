@@ -11,19 +11,42 @@ from core.db import engine
 from core.lark import notify_stop_sale
 from core.sla import compute_deadline
 
-BOARDS = ["ALL", "RO", "RB"]
 ACTIONS = ["Closed", "Re-Open"]
 
-_ROOM_PRESETS_FALLBACK = [
-    "Standard Double Room", "Standard Twin Room", "Deluxe Jacuzzi",
-    "Deluxe Poolside", "Suite Jacuzzi", "Suite Poolside",
-    "Superior Room", "Deluxe Room", "Family Room", "Villa",
-]
+
+@st.cache_data(ttl=300)
+def _get_apc_plans(hotel_code: str) -> list[tuple[str, str]]:
+    """Return list of (room_type, board) from apc_rs_config for this hotel_code.
+    Falls back to empty list if not found."""
+    if not hotel_code:
+        return []
+    try:
+        import json as _json
+        with engine().connect() as con:
+            body_str = con.execute(
+                text("SELECT body FROM apc_rs_config WHERE code = :code"),
+                {"code": hotel_code},
+            ).scalar()
+        if not body_str:
+            return []
+        body = _json.loads(body_str) if isinstance(body_str, str) else body_str
+        plans = body.get("plans", [])
+        seen = set()
+        result = []
+        for p in plans:
+            rt = (p.get("type") or "").strip()
+            board = (p.get("plan") or p.get("board") or "").strip().upper()
+            if rt and board and (rt, board) not in seen:
+                result.append((rt, board))
+                seen.add((rt, board))
+        return result
+    except Exception:
+        return []
 
 
 @st.cache_data(ttl=300)
 def _get_hotel_room_types(hotel_id: str) -> list[str]:
-    """Fetch room types configured for a hotel in APSS (hotels.room_types)."""
+    """Fallback: fetch room types from APSS hotels.room_types (comma-separated)."""
     try:
         with engine().connect() as con:
             rt_str = con.execute(
@@ -393,31 +416,57 @@ def _show_create(prefill: dict | None = None):
     if prefill and prefill.get("hotel_id") in hotel_ids:
         default_hotel_idx = hotel_ids.index(prefill["hotel_id"])
 
-    # Pre-load room types for the default hotel (outside form so it can react to hotel change)
-    default_hotel_id = hotel_ids[default_hotel_idx] if hotel_ids else None
-    room_type_options = _get_hotel_room_types(default_hotel_id) if default_hotel_id else []
+    # Hotel selectbox OUTSIDE form so plans reload when hotel changes
+    hotel_id = st.selectbox(
+        "Hotel *",
+        hotel_ids,
+        index=default_hotel_idx,
+        format_func=lambda x: hotels.get(x, {}).get("name", x),
+        key="create_ss_hotel",
+    )
+
+    # Load APC plans for the currently selected hotel (reactive)
+    hotel_code = hotels.get(hotel_id, {}).get("code", "")
+    apc_plans = _get_apc_plans(hotel_code) if hotel_code else []
+    # Fallback: APSS hotel room_types when APC has no config
+    fallback_rooms = _get_hotel_room_types(hotel_id) if (hotel_id and not apc_plans) else []
 
     with st.form("create_stop_sale", clear_on_submit=True):
-        hotel_id = st.selectbox(
-            "Hotel *",
-            hotel_ids,
-            index=default_hotel_idx,
-            format_func=lambda x: hotels.get(x, {}).get("name", x),
-        )
-
-        if room_type_options:
-            st.write("**Room Types** — เลือกได้หลายห้อง")
+        if apc_plans:
+            # Show room type + board options from APC Rate Structure
+            plan_labels = [f"{rt}  /  {board_}" for rt, board_ in apc_plans]
+            st.write("**Room Types & Rate Plan** — ดึงจาก APC Rate Structure")
+            selected_plan_labels = st.multiselect(
+                "เลือก Room Type / Board (เลือกได้หลายรายการ)",
+                plan_labels,
+                help="รายการนี้ดึงมาจาก APC Rate Structure โดยอัตโนมัติ",
+            )
+            custom_rooms = st.text_input(
+                "Room Types เพิ่มเติม (คั่นด้วยลูกน้ำ)",
+                placeholder="กรณีต้องการเพิ่มนอกเหนือจากรายการข้างต้น",
+            )
+            # Board is derived from selections; default ALL for mixed or when user types custom_rooms
+            board = "ALL"
+        elif fallback_rooms:
+            st.info("ไม่พบ APC Rate Structure — ใช้ Room Types จาก APSS แทน")
+            selected_plan_labels = []
+            selected_presets = st.multiselect("Room Types (เลือกได้หลายห้อง)", fallback_rooms)
+            custom_rooms = st.text_input(
+                "Room Types เพิ่มเติม (คั่นด้วยลูกน้ำ)",
+                placeholder="พิมพ์ room type ที่ต้องการ",
+            )
+            board = st.selectbox("Board Type", ["ALL", "RO", "RB"])
         else:
-            st.info("ยังไม่มี Room Types สำหรับโรงแรมนี้ — ไปตั้งค่าได้ที่ Management → Hotels → Edit")
-        selected_presets = st.multiselect("Room Types (เลือกได้หลายห้อง)", room_type_options)
-        custom_rooms = st.text_input(
-            "Room Types เพิ่มเติม (คั่นด้วยลูกน้ำ เช่น Superior Double or Twin, Deluxe Pool Access)",
-            placeholder="พิมพ์ room type ที่ต้องการ",
-        )
+            st.info("ยังไม่มี Room Types — ระบุชื่อห้องโดยตรง")
+            selected_plan_labels = []
+            selected_presets = []
+            custom_rooms = st.text_input(
+                "Room Types (คั่นด้วยลูกน้ำ เช่น Superior Double or Twin, Deluxe Pool Access) *",
+                placeholder="พิมพ์ room type ที่ต้องการ",
+            )
+            board = st.selectbox("Board Type", ["ALL", "RO", "RB"])
 
-        c1, c2 = st.columns(2)
-        board = c1.selectbox("Board Type", BOARDS)
-        action = c2.selectbox("Action", ACTIONS)
+        action = st.selectbox("Action", ACTIONS)
 
         c3, c4 = st.columns(2)
         date_from = c3.date_input("วันที่เริ่มปิด *", value=date.today())
@@ -428,10 +477,28 @@ def _show_create(prefill: dict | None = None):
                                   help="สร้าง ticket ประเภท Request/High ให้อัตโนมัติพร้อมกับ Stop Sale")
 
         if st.form_submit_button("🚫 สร้าง Stop Sale"):
-            # Validate room types
-            all_rooms = list(selected_presets)
-            if custom_rooms.strip():
-                all_rooms += [r.strip() for r in custom_rooms.split(",") if r.strip()]
+            # Build room list and derive board from APC plans selections
+            if apc_plans:
+                # Parse selected "RoomType  /  Board" labels
+                selected_pairs = []
+                for lbl in selected_plan_labels:
+                    parts = lbl.split("  /  ", 1)
+                    if len(parts) == 2:
+                        selected_pairs.append((parts[0].strip(), parts[1].strip()))
+                all_rooms = [rt for rt, _ in selected_pairs]
+                if custom_rooms.strip():
+                    all_rooms += [r.strip() for r in custom_rooms.split(",") if r.strip()]
+                # Derive board: if all selected pairs have same board, use it; else ALL
+                boards_in_selection = {b for _, b in selected_pairs}
+                if len(boards_in_selection) == 1 and not custom_rooms.strip():
+                    board = boards_in_selection.pop()
+                else:
+                    board = "ALL"
+            else:
+                all_rooms = list(selected_presets)
+                if custom_rooms.strip():
+                    all_rooms += [r.strip() for r in custom_rooms.split(",") if r.strip()]
+
             if not all_rooms:
                 st.error("กรุณาเลือกหรือระบุ Room Type อย่างน้อย 1 ประเภท")
                 return
@@ -442,9 +509,8 @@ def _show_create(prefill: dict | None = None):
             user = current_user()
             now = datetime.now(timezone.utc)
             ss_id = str(uuid.uuid4())
-            hotel_info = hotels.get(hotel_id, {})
-            hotel_name = hotel_info.get("name", "")
-            hotel_code = hotel_info.get("code", "") or None
+            hotel_name = hotels.get(hotel_id, {}).get("name", "")
+            hotel_code_save = hotel_code or None
             room_types_str = ", ".join(all_rooms)
 
             with engine().begin() as con:
@@ -462,7 +528,7 @@ def _show_create(prefill: dict | None = None):
                     "id": ss_id,
                     "hotel_id": hotel_id,
                     "hotel_name": hotel_name,
-                    "hotel_code": hotel_code,
+                    "hotel_code": hotel_code_save,
                     "room_types": room_types_str,
                     "board": board,
                     "date_from": str(date_from),
