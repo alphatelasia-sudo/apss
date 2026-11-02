@@ -16,7 +16,7 @@ def gate():
         st.login()
         st.stop()
     email = st.user.email or ""
-    if not email.endswith("@alphatel.asia"):
+    if not (email.endswith("@alphatel.asia") or email.endswith("@alphatel.info")):
         st.error(f"Access denied: {email} is not an Alphatel account.")
         st.logout()
         st.stop()
