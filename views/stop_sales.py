@@ -444,6 +444,11 @@ def _show_create(prefill: dict | None = None):
     default_hotel_id = hotel_ids[default_hotel_idx] if hotel_ids else None
     default_hotel_name = hotels.get(default_hotel_id, "") if default_hotel_id else ""
     room_type_options = _get_apc_room_types(default_hotel_name) if default_hotel_name else _ROOM_PRESETS_FALLBACK
+    # DEBUG: show what was resolved (remove after confirming)
+    import re as _re
+    _m = _re.match(r'^(H\d+)[_\s]', default_hotel_name)
+    _dbg_code = _m.group(1) if _m else "ไม่พบ code"
+    st.caption(f"🔍 DEBUG — hotel_name: `{default_hotel_name}` | apc_code: `{_dbg_code}` | room_types: {room_type_options}")
 
     with st.form("create_stop_sale", clear_on_submit=True):
         hotel_id = st.selectbox(
