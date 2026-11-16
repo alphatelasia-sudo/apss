@@ -75,6 +75,7 @@ def _show_edit(d: dict):
                        "email": email, "addr": address, "webhook": lark_webhook,
                        "active": int(active), "rt": rt_str or None, "id": d["hotel_id"]})
             st.session_state.pop(f"editing_hotel_{d['hotel_id']}", None)
+            st.cache_data.clear()  # hotel lists in Tickets / Stop Sale are cached 5 min; show the change now
             st.success("Hotel updated.")
             st.rerun()
 
@@ -125,12 +126,13 @@ def _show_create():
                 return
             with engine().begin() as con:
                 con.execute(text("""
-                    INSERT INTO hotels (hotel_id, hotel_name, hotel_code, contact_person, phone, email, address, lark_webhook)
-                    VALUES (:hid, :name, :code, :cp, :phone, :email, :addr, :webhook)
+                    INSERT INTO hotels (hotel_id, hotel_name, hotel_code, contact_person, phone, email, address, lark_webhook, active)
+                    VALUES (:hid, :name, :code, :cp, :phone, :email, :addr, :webhook, 1)
                 """), {"hid": str(uuid.uuid4()), "name": hotel_name,
                        "code": hotel_code.strip().upper() or None,
                        "cp": contact_person,
                        "phone": phone, "email": email, "addr": address, "webhook": lark_webhook})
+            st.cache_data.clear()  # hotel lists in Tickets / Stop Sale are cached 5 min; show the new hotel now
             st.success(f"Hotel '{hotel_name}' added.")
             st.rerun()
 
