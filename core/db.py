@@ -190,8 +190,12 @@ def _schema_ddl(pg: bool) -> list[str]:
             requested_by_name TEXT,
             note              TEXT,
             created_at        {ts},
-            cancelled_at      TIMESTAMPTZ
+            cancelled_at      TIMESTAMPTZ,
+            channel           TEXT DEFAULT 'ALL'
         )""",
+        # channel: 'ALL' = closed to every channel; 'B2B' = closed to agents / wholesalers only (OTA and Direct
+        # still sell). APC's Yield Suggestion page writes B2B rows into this shared table.
+        "ALTER TABLE stop_sales ADD COLUMN IF NOT EXISTS channel TEXT DEFAULT 'ALL'",
     ]
 
 

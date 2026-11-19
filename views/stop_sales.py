@@ -12,6 +12,14 @@ from core.lark import notify_stop_sale
 from core.sla import compute_deadline
 
 ACTIONS = ["Closed", "Re-Open"]
+# 'ALL' = every channel; 'B2B' = agents / wholesalers only (OTA and Direct still sell).
+# A B2B Re-Open only reopens B2B closures, never an ALL closure.
+CHANNELS = ["ALL", "B2B"]
+CHANNEL_LABEL = {"ALL": "ALL (ทุกช่องทาง)", "B2B": "B2B ONLY (Agent / Wholesale)"}
+
+
+def _chan(d: dict) -> str:
+    return str(d.get("channel") or "ALL").strip().upper()
 
 
 @st.cache_data(ttl=300)
@@ -69,15 +77,21 @@ def _gen_ticket_number() -> str:
 def _create_ticket_for_stop_sale(
     ss_id: str, hotel_id: str, hotel_name: str,
     room_types_str: str, board: str, date_from, date_to, action: str,
-    note: str, user: dict, now: datetime,
+    note: str, user: dict, now: datetime, channel: str = "ALL",
 ) -> str:
     """Insert a ticket for this stop sale and return its ticket_id."""
     ticket_id = str(uuid.uuid4())
     ticket_number = _gen_ticket_number()
-    title = f"Stop Sale: {hotel_name} {date_from} → {date_to} ({action})"
+    if channel == "B2B":
+        title = f"Stop Sale B2B: {hotel_name} {date_from} → {date_to} ({action} B2B ONLY)"
+        chan_line = "**ช่องทาง:** B2B เท่านั้น (Agent / Wholesale) · OTA และ Direct ยังขายต่อ\n"
+    else:
+        title = f"Stop Sale: {hotel_name} {date_from} → {date_to} ({action})"
+        chan_line = "**ช่องทาง:** ALL (ทุกช่องทาง)\n"
     description = (
         f"Stop Sale สร้างอัตโนมัติจากระบบ\n\n"
         f"**Hotel:** {hotel_name}\n"
+        f"{chan_line}"
         f"**Room Types:** {room_types_str}\n"
         f"**Board:** {board}\n"
         f"**วันที่:** {date_from} → {date_to}\n"
@@ -204,25 +218,41 @@ def _show_calendar():
             ORDER BY created_at ASC
         """), {"hid": hotel_id, "me": str(month_end), "ms": str(month_start)}).fetchall()
 
-    # Build status matrix: (room_type_lower, board, day_int) → action
-    # Last-written record wins; "Closed" and "Re-Open" can alternate
-    status_matrix: dict[tuple, str] = {}
+    # Build status matrices per channel: (room_type_lower, board, day_int) → action
+    # Within a channel the last-written record wins ("Closed" and "Re-Open" can alternate).
+    # Channels never overwrite each other: a B2B row can't reopen an ALL closure.
+    chan_matrix: dict[str, dict[tuple, str]] = {"ALL": {}, "B2B": {}}
     all_room_type_originals: dict[str, str] = {}  # lower → original case
 
     for r in rows:
         d = dict(r._mapping)
+        target = chan_matrix.setdefault(_chan(d), {})
         room_types = [rt.strip() for rt in d["room_types"].split(",") if rt.strip()]
-        boards = ["RO", "RB"] if d["board"] == "ALL" else [d["board"]]
-        ss_from = max(date.fromisoformat(str(d["date_from"])), month_start)
-        ss_to   = min(date.fromisoformat(str(d["date_to"])), month_end)
+        board_u = str(d["board"] or "ALL").strip().upper()
+        boards = ["RO", "RB"] if board_u == "ALL" else [board_u]
+        ss_from = max(date.fromisoformat(str(d["date_from"])[:10]), month_start)
+        ss_to   = min(date.fromisoformat(str(d["date_to"])[:10]), month_end)
         for rt in room_types:
             rt_lower = rt.lower()
             all_room_type_originals[rt_lower] = rt  # keep original casing
             for b in boards:
                 cur = ss_from
                 while cur <= ss_to:
-                    status_matrix[(rt_lower, b, cur.day)] = d["action"]
+                    target[(rt_lower, b, cur.day)] = d["action"]
                     cur += timedelta(days=1)
+
+    # Combined cell status: ALL Closed > B2B Closed > ALL Re-Open > B2B Re-Open
+    status_matrix: dict[tuple, str] = {}
+    for k in set(chan_matrix["ALL"]) | set(chan_matrix["B2B"]):
+        a, b2 = chan_matrix["ALL"].get(k), chan_matrix["B2B"].get(k)
+        if a == "Closed":
+            status_matrix[k] = "Closed"
+        elif b2 == "Closed":
+            status_matrix[k] = "Closed B2B"
+        elif a == "Re-Open":
+            status_matrix[k] = "Re-Open"
+        elif b2 == "Re-Open":
+            status_matrix[k] = "Re-Open B2B"
 
     if not all_room_type_originals:
         st.info(
@@ -242,6 +272,8 @@ def _show_calendar():
     # Color scheme
     C_CLOSED  = "#FFCCCC"  # light red
     C_REOPEN  = "#CCFFCC"  # light green
+    C_CLOSED_B2B = "#FFD8A8"  # orange: closed to B2B only
+    C_REOPEN_B2B = "#E6F9E6"  # pale green: B2B reopened
     C_EMPTY   = "#FAFAFA"
     C_HDR     = "#F0F0F0"
     C_SAT     = "#E8F0FF"  # light blue for Saturday
@@ -297,8 +329,12 @@ def _show_calendar():
                 dow_idx = date(sel_month.year, sel_month.month, day).weekday()
                 if action == "Closed":
                     cell_bg, cell_text, fw = C_CLOSED, "C", "font-weight:700;"
+                elif action == "Closed B2B":
+                    cell_bg, cell_text, fw = C_CLOSED_B2B, "B", "font-weight:700;color:#A84300;"
                 elif action == "Re-Open":
                     cell_bg, cell_text, fw = C_REOPEN, "O", "font-weight:700;"
+                elif action == "Re-Open B2B":
+                    cell_bg, cell_text, fw = C_REOPEN_B2B, "b", "font-weight:600;color:#2E7D32;"
                 else:
                     cell_bg = C_SAT if dow_idx == 5 else (C_SUN if dow_idx == 6 else row_bg)
                     cell_text, fw = "", ""
@@ -309,9 +345,13 @@ def _show_calendar():
 
     # Legend
     html.append(
-        "<div style='margin-top:8px;font-size:11px;display:flex;gap:16px;'>"
-        f"<span><span style='background:{C_CLOSED};padding:2px 8px;border:1px solid #ccc;'>C</span> Closed</span>"
+        "<div style='margin-top:8px;font-size:11px;display:flex;flex-wrap:wrap;gap:16px;'>"
+        f"<span><span style='background:{C_CLOSED};padding:2px 8px;border:1px solid #ccc;'>C</span> Closed (ทุกช่องทาง)</span>"
+        f"<span><span style='background:{C_CLOSED_B2B};padding:2px 8px;border:1px solid #ccc;color:#A84300;font-weight:700;'>B</span>"
+        " Closed B2B ONLY (Agent / Wholesale · OTA และ Direct ยังขาย)</span>"
         f"<span><span style='background:{C_REOPEN};padding:2px 8px;border:1px solid #ccc;'>O</span> Re-Open / Open</span>"
+        f"<span><span style='background:{C_REOPEN_B2B};padding:2px 8px;border:1px solid #ccc;color:#2E7D32;'>b</span>"
+        " Re-Open B2B</span>"
         f"<span><span style='background:{C_EMPTY};padding:2px 8px;border:1px solid #ccc;'>&nbsp;&nbsp;</span> ไม่มีรายการ</span>"
         "</div>"
     )
@@ -321,8 +361,9 @@ def _show_calendar():
     # Summary count
     closed_count = sum(1 for v in status_matrix.values() if v == "Closed")
     reopen_count = sum(1 for v in status_matrix.values() if v == "Re-Open")
+    b2b_count = sum(1 for v in status_matrix.values() if v == "Closed B2B")
     st.caption(
-        f"📊 เดือนนี้: Closed {closed_count} เซลล์ | Re-Open {reopen_count} เซลล์ "
+        f"📊 เดือนนี้: Closed {closed_count} เซลล์ | Closed B2B {b2b_count} เซลล์ | Re-Open {reopen_count} เซลล์ "
         f"| ห้อง {len(sorted_room_types)} ประเภท"
     )
 
@@ -337,9 +378,11 @@ def _show_list():
         f_hotel = c1.selectbox("Hotel", ["All"] + [v["name"] for v in hotels.values()])
         f_action = c2.selectbox("Action", ["All"] + ACTIONS)
         f_status = c3.selectbox("Status", ["Active", "All", "Cancelled"])
-        c4, c5, _ = st.columns(3)
+        c4, c5, c6 = st.columns(3)
         f_from = c4.date_input("From", value=None)
         f_to = c5.date_input("To", value=None)
+        f_channel = c6.selectbox("Channel", ["All"] + CHANNELS,
+                                 format_func=lambda c: c if c == "All" else CHANNEL_LABEL[c])
         st.form_submit_button("Apply Filter")
 
     query = "SELECT * FROM stop_sales WHERE 1=1"
@@ -353,6 +396,9 @@ def _show_list():
     if f_status != "All":
         query += " AND status = :status"
         params["status"] = f_status
+    if f_channel != "All":
+        query += " AND UPPER(COALESCE(channel, 'ALL')) = :channel"
+        params["channel"] = f_channel
     if f_from:
         query += " AND date_to >= :df"
         params["df"] = str(f_from)
@@ -373,8 +419,10 @@ def _show_list():
         d = dict(r._mapping)
         badge = ACTION_BADGE.get(d["action"], "•")
         status_icon = STATUS_COLOR.get(d["status"], "•")
+        chan = _chan(d)
+        chan_badge = "🟠 **B2B ONLY** " if chan == "B2B" else ""
         label = (
-            f"{badge} {d['hotel_name']} — {d['room_types']} "
+            f"{badge} {chan_badge}{d['action']} — {d['hotel_name']} — {d['room_types']} "
             f"| {d['date_from']} → {d['date_to']} "
             f"| Board: {d['board']} "
             f"| {status_icon} {d['status']}"
@@ -385,6 +433,10 @@ def _show_list():
             c1.write(f"**Room Types:** {d['room_types']}")
             c1.write(f"**Board:** {d['board']}")
             c1.write(f"**Action:** {d['action']}")
+            c1.write(f"**Channel:** {CHANNEL_LABEL.get(chan, chan)}")
+            if chan == "B2B":
+                st.warning("B2B ONLY — ปิด/เปิดเฉพาะ Agent / Wholesale · OTA และ Direct ยังขายต่อ "
+                           "(อย่าปิดทุกช่องทาง)")
             c2.write(f"**Date From:** {d['date_from']}")
             c2.write(f"**Date To:** {d['date_to']}")
             c2.write(f"**Status:** {d['status']}")
@@ -481,7 +533,13 @@ def _show_create(prefill: dict | None = None):
             )
             board = st.selectbox("Board Type", ["ALL", "RO", "RB"])
 
-        action = st.selectbox("Action", ACTIONS)
+        ca, cb = st.columns(2)
+        action = ca.selectbox("Action", ACTIONS)
+        channel = cb.selectbox(
+            "Channel", CHANNELS, format_func=lambda c: CHANNEL_LABEL[c],
+            help="ALL = ปิด/เปิดทุกช่องทาง · B2B = เฉพาะ Agent / Wholesale (OTA และ Direct ยังขาย). "
+                 "Re-Open B2B เปิดเฉพาะที่ปิด B2B ไว้ ไม่เปิดที่ปิด ALL",
+        )
 
         c3, c4 = st.columns(2)
         date_from = c3.date_input("วันที่เริ่มปิด *", value=date.today())
@@ -527,17 +585,22 @@ def _show_create(prefill: dict | None = None):
             hotel_name = hotels.get(hotel_id, {}).get("name", "")
             hotel_code_save = hotel_code or None
             room_types_str = ", ".join(all_rooms)
+            # B2B rows carry the same "[B2B ONLY]" note prefix APC's Yield Suggestion page writes
+            note_save = note.strip()
+            if channel == "B2B" and not note_save.startswith("[B2B ONLY]"):
+                note_save = "[B2B ONLY]" + (f" {note_save}" if note_save else "")
+            note_save = note_save or None
 
             with engine().begin() as con:
                 con.execute(text("""
                     INSERT INTO stop_sales (
                         stop_sale_id, hotel_id, hotel_name, hotel_code, room_types, board,
                         date_from, date_to, action, status,
-                        requested_by, requested_by_name, note, created_at
+                        requested_by, requested_by_name, note, created_at, channel
                     ) VALUES (
                         :id, :hotel_id, :hotel_name, :hotel_code, :room_types, :board,
                         :date_from, :date_to, :action, 'Active',
-                        :by, :by_name, :note, :now
+                        :by, :by_name, :note, :now, :channel
                     )
                 """), {
                     "id": ss_id,
@@ -551,8 +614,9 @@ def _show_create(prefill: dict | None = None):
                     "action": action,
                     "by": user["email"],
                     "by_name": user["name"],
-                    "note": note.strip() or None,
+                    "note": note_save,
                     "now": now,
+                    "channel": channel,
                 })
 
             # Auto-create ticket if requested
@@ -563,7 +627,7 @@ def _show_create(prefill: dict | None = None):
                     new_ticket_id = _create_ticket_for_stop_sale(
                         ss_id, hotel_id, hotel_name, room_types_str,
                         board, date_from, date_to, action,
-                        note.strip(), user, now,
+                        note_save or "", user, now, channel,
                     )
                     with engine().connect() as con:
                         new_ticket_num = con.execute(
@@ -581,6 +645,7 @@ def _show_create(prefill: dict | None = None):
                 "date_from": str(date_from),
                 "date_to": str(date_to),
                 "action": action,
+                "channel": channel,
                 "ticket_ref": new_ticket_num or "-",
                 "requested_by_name": user["name"],
             }
@@ -589,7 +654,8 @@ def _show_create(prefill: dict | None = None):
             ).start()
 
             msg = (f"✅ Stop Sale สร้างเรียบร้อย — {hotel_name} | {room_types_str} "
-                   f"| {date_from} → {date_to} | {action}")
+                   f"| {date_from} → {date_to} | {action}"
+                   + (" B2B ONLY" if channel == "B2B" else ""))
             if new_ticket_num:
                 msg += f"\n\n🎫 Ticket **#{new_ticket_num}** ถูกสร้างอัตโนมัติ"
             st.success(msg)

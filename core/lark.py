@@ -90,10 +90,18 @@ def notify_ticket_overdue(ticket: dict) -> bool:
 
 def notify_stop_sale(ss: dict) -> bool:
     action = ss.get("action", "Closed")
-    color = "red" if action == "Closed" else "green"
+    b2b = str(ss.get("channel") or "ALL").upper() == "B2B"
+    if b2b:
+        color = "orange" if action == "Closed" else "turquoise"
+    else:
+        color = "red" if action == "Closed" else "green"
     icon = "🚫" if action == "Closed" else "✅"
+    chan_title = " B2B ONLY" if b2b else ""
+    chan_line = ("**ช่องทาง:** B2B เท่านั้น (Agent / Wholesale) · OTA และ Direct ยังขายต่อ\n" if b2b
+                 else "**ช่องทาง:** ALL (ทุกช่องทาง)\n")
     return notify(
-        f"{icon} Stop Sale {action} — {ss.get('hotel_name', '-')}",
+        f"{icon} Stop Sale {action}{chan_title} — {ss.get('hotel_name', '-')}",
+        chan_line +
         f"**ห้องพัก:** {ss.get('room_types', '-')}\n"
         f"**Board:** {ss.get('board', '-')}\n"
         f"**วันที่:** {ss.get('date_from')} → {ss.get('date_to')}\n"
