@@ -112,6 +112,9 @@ Every stop sale has a **channel**:
   sends its **own** High ticket, `Rate Update (Yield): <hotel> <first> → <last> · <n> คืน`, listing each night's
   Tier old → new, with a blue 📈 Lark card. It writes no stop sale; the team changes the rates in the channel manager.
   Accepting Yield and Close B2B together therefore gives two tickets.
+- **Other Tier changes in APC's Rate Structure** send the same kind of ticket: *Use the suggested Tier* on the
+  Approvals tab (`Rate Update (Tier แนะนำ)`) and saving edits on the Rate Calendar (`Rate Update (Rate Calendar)`,
+  per room type). Approving a sale below Bottom sends none, since the Tier does not change.
 - **Closing a ticket does not end its stop sales.** The calendar shows every stop sale whose own status is `Active`,
   whatever its ticket's status, so the nights stay *Closed B2B* after the ticket is closed (which matches the channel
   manager). To sell those nights again, accept *Reopen B2B* in APC or press **⚫ Cancel Stop Sale** on each row in the list.
