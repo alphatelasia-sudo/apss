@@ -29,6 +29,10 @@ def engine():
     eng = create_engine(_database_url(), pool_pre_ping=True)
     pg = eng.dialect.name == "postgresql"
     for ddl in _schema_ddl(pg):
+        if not pg:
+            # SQLite has no "ADD COLUMN IF NOT EXISTS": run a plain ADD COLUMN (it fails harmlessly
+            # below when the column is already there).
+            ddl = ddl.replace("ADD COLUMN IF NOT EXISTS", "ADD COLUMN")
         try:
             with eng.begin() as con:
                 con.execute(text(ddl))
@@ -174,7 +178,6 @@ def _schema_ddl(pg: bool) -> list[str]:
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS due_notified_at TIMESTAMPTZ",
         "ALTER TABLE hotels ADD COLUMN IF NOT EXISTS room_types TEXT",
         "ALTER TABLE hotels ADD COLUMN IF NOT EXISTS hotel_code TEXT",
-        "ALTER TABLE stop_sales ADD COLUMN IF NOT EXISTS hotel_code TEXT",
         f"""CREATE TABLE IF NOT EXISTS stop_sales (
             stop_sale_id      TEXT PRIMARY KEY,
             hotel_id          TEXT,
@@ -191,8 +194,11 @@ def _schema_ddl(pg: bool) -> list[str]:
             note              TEXT,
             created_at        {ts},
             cancelled_at      TIMESTAMPTZ,
-            channel           TEXT DEFAULT 'ALL'
+            channel           TEXT DEFAULT 'ALL',
+            hotel_code        TEXT
         )""",
+        # After the CREATE, so an older stop_sales table without hotel_code gets it too
+        "ALTER TABLE stop_sales ADD COLUMN IF NOT EXISTS hotel_code TEXT",
         # channel: 'ALL' = closed to every channel; 'B2B' = closed to agents / wholesalers only (OTA and Direct
         # still sell). APC's Yield Suggestion page writes B2B rows into this shared table.
         "ALTER TABLE stop_sales ADD COLUMN IF NOT EXISTS channel TEXT DEFAULT 'ALL'",
