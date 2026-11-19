@@ -21,6 +21,7 @@ apss/
 ├── views/
 │   ├── dashboard.py        # Ticket stats, SLA breaches, recent tickets
 │   ├── tickets.py          # Create / list / view / edit / close tickets + comments
+│   ├── stop_sales.py       # Stop Sale calendar / list / create (ALL or B2B ONLY) + auto ticket
 │   ├── hotels.py           # Hotel list management + contacts
 │   ├── agents.py           # Agent & role management
 │   ├── reports.py          # Stats by date range, hotel, agent
@@ -87,6 +88,28 @@ python migrate_from_sheets.py \
 - `service_account.json`: Google service account key with read access to the spreadsheet.
 - Run **once** before going live. The script upserts, so it is safe to run again.
 
+## Stop Sale (ปิดขาย / เปิดขาย)
+
+Menu **Stop Sale** has three tabs: the calendar of a hotel's month, the list (filters: hotel, action, status, dates, channel)
+and the create form (room types and boards come from the APC Rate Structure; a High ticket is made too when ticked).
+
+Every stop sale has a **channel**:
+
+| Channel | Meaning | Calendar |
+|---------|---------|----------|
+| **ALL (ทุกช่องทาง)** | Close / reopen the room on every channel (OTA, Direct, B2B) — the default | red **C** = Closed · green **O** = Re-Open |
+| **B2B ONLY (Agent / Wholesale)** | Close / reopen for agents and wholesalers only. **OTA and Direct keep selling** — do not close them in the channel manager | orange **B** = Closed B2B · pale green **b** = Re-Open B2B |
+
+- A **B2B Re-Open** only reopens what a B2B close shut; it never reopens an ALL closure. When both apply to a night,
+  the calendar shows the ALL closure.
+- B2B rows show 🟠 **B2B ONLY** in the list, and their ticket title and Lark message say *B2B ONLY*.
+- **Requests from APC:** when the Revenue team accepts *Close B2B* / *Reopen B2B* on APC's **Yield Suggestion** page,
+  APC writes the B2B stop sale (every room, board ALL, consecutive nights as one range) and a High ticket
+  `Stop Sale B2B: <hotel> <from> → <to> (Closed B2B ONLY)` straight into APSS. The note starts with `[B2B ONLY]`.
+  The reservation team then closes **only the B2B / agent rate plans** in the channel manager and resolves the ticket.
+- Database: `stop_sales.channel` (`'ALL'` default, `'B2B'`), added automatically on app start
+  (`ALTER TABLE stop_sales ADD COLUMN IF NOT EXISTS channel TEXT DEFAULT 'ALL'`). APC reads the same table.
+
 ## Features
 
 | Feature | Status |
@@ -98,6 +121,7 @@ python migrate_from_sheets.py \
 | Hotels — list, create, edit, contacts | ✅ |
 | Agents & Roles — manage agents, role colors | ✅ |
 | Reports — by date range, hotel, agent, priority, daily trend | ✅ |
+| Stop Sale — calendar, list, create; ALL or B2B ONLY channel; auto ticket; requests from APC Yield Suggestion | ✅ |
 | Settings — SLA config, Lark webhook, app settings | ✅ |
 | Google Sign-in | ✅ |
 | Lark notifications on ticket create/update/SLA breach | ✅ |
