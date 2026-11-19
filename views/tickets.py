@@ -1,5 +1,6 @@
 """Tickets: list, create, view, edit, close, comments, attachments."""
 import base64
+import re
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -133,7 +134,7 @@ def _show_list():
             c2.write(due_label)
             c2.write(f"**Created:** {d.get('created_at')}")
             if d.get("description"):
-                st.write(f"**Description:** {d['description']}")
+                st.markdown(f"**Description:** {_desc_md(d['description'])}")
             st.divider()
             bt1, bt2, bt3, bt4 = st.columns(4)
             # No st.rerun() here — button click already triggers a rerun;
@@ -163,12 +164,18 @@ def _show_list():
                 _show_add_comment(tid)
 
 
+def _desc_md(s: str) -> str:
+    """Keep the description's own line breaks: markdown joins single line breaks into one line, so turn each single
+    break into a hard break (two spaces). Blank lines and list items stay as they are."""
+    return re.sub(r"(?<!\n)\n(?!\n)", "  \n", str(s).replace("\r\n", "\n"))
+
+
 def _show_ticket_detail(d: dict):
     """Used only from the edit flow (hotels/agents already resolved)."""
     st.write(f"**Hotel:** {d.get('hotel_name') or '-'} | **Category:** {d.get('category') or '-'}")
     st.write(f"**Status:** {d['status']} | **Priority:** {d['priority']}")
     st.write(f"**Assigned to:** {d.get('assigned_name') or 'Unassigned'}")
-    st.write(f"**Description:** {d.get('description') or '-'}")
+    st.markdown(f"**Description:** {_desc_md(d.get('description') or '-')}")
     st.write(f"**SLA Deadline:** {d.get('sla_deadline') or '-'}")
     st.write(f"**Created:** {d.get('created_at')} by {d.get('created_by_name') or '-'}")
 
