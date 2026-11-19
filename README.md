@@ -108,6 +108,10 @@ Every stop sale has a **channel**:
   per accept, `Stop Sale B2B: <hotel> <first> → <last> · <n> คืน (Closed B2B ONLY)` listing every night, straight into
   APSS, and posts one card per ticket to the Lark group set in APSS Settings (when Lark is on). The note starts with `[B2B ONLY]`.
   The reservation team then closes **only the B2B / agent rate plans** in the channel manager and resolves the ticket.
+- **Closing a ticket does not end its stop sales.** The calendar shows every stop sale whose own status is `Active`,
+  whatever its ticket's status, so the nights stay *Closed B2B* after the ticket is closed (which matches the channel
+  manager). To sell those nights again, accept *Reopen B2B* in APC or press **⚫ Cancel Stop Sale** on each row in the list.
+- Ticket descriptions keep their line breaks on the Tickets page (each field on its own line), for old tickets too.
 - Database: `stop_sales.channel` (`'ALL'` default, `'B2B'`), added automatically on app start
   (`ALTER TABLE stop_sales ADD COLUMN IF NOT EXISTS channel TEXT DEFAULT 'ALL'`). APC reads the same table.
 
