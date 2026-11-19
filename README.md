@@ -108,6 +108,10 @@ Every stop sale has a **channel**:
   per accept, `Stop Sale B2B: <hotel> <first> → <last> · <n> คืน (Closed B2B ONLY)` listing every night, straight into
   APSS, and posts one card per ticket to the Lark group set in APSS Settings (when Lark is on). The note starts with `[B2B ONLY]`.
   The reservation team then closes **only the B2B / agent rate plans** in the channel manager and resolves the ticket.
+- **Yield (rate) updates from APC:** accepting a *Yield* on the same page changes the Tier in APC's Rate Structure and
+  sends its **own** High ticket, `Rate Update (Yield): <hotel> <first> → <last> · <n> คืน`, listing each night's
+  Tier old → new, with a blue 📈 Lark card. It writes no stop sale; the team changes the rates in the channel manager.
+  Accepting Yield and Close B2B together therefore gives two tickets.
 - **Closing a ticket does not end its stop sales.** The calendar shows every stop sale whose own status is `Active`,
   whatever its ticket's status, so the nights stay *Closed B2B* after the ticket is closed (which matches the channel
   manager). To sell those nights again, accept *Reopen B2B* in APC or press **⚫ Cancel Stop Sale** on each row in the list.
